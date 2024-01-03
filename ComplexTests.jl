@@ -4,15 +4,8 @@
 using Markdown
 using InteractiveUtils
 
-# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
-macro bind(def, element)
-    quote
-        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
-        local el = $(esc(element))
-        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
-        el
-    end
-end
+# ╔═╡ 01e9ae17-56d2-4903-b29b-b1fc4ce75a83
+using BenchmarkTools
 
 # ╔═╡ be839f7a-c2e9-4bce-b2bb-d1ed71cfe1f3
 using Plots
@@ -40,11 +33,12 @@ In this notebook, we will test Pluto functionalities and possible code structure
 md"""
 TO DO LIST:
 - Try to embed previous UI directly on Pluto (using JS).
-- Check if speed is comparable to Python + Numba.
-"""
+- See if speed can be improved (bottlenecks?).
+- GUI? Maybe Mousetrap?
 
-# ╔═╡ e9c60488-03b7-4415-9ee3-d18c09144e9c
-md"""
+RESULTS:
+- Speed comparable with Python + Numba.
+
 IMPRESSIONS SO FAR:
 - Pluto file structure makes git diffs a lot easier!
 - Possibility of interacting directly with page JS and HTML is great! 
@@ -56,61 +50,70 @@ md"""
 ## Plotting Tests
 """
 
-# ╔═╡ ffd92470-837a-4a0f-a770-11103083843d
-f(z, c) = z^2 + c
+# ╔═╡ 2188ffb6-3a97-4e85-8689-0835502a3ebd
+md"""
+## Benchmarks
+"""
 
 # ╔═╡ ae6410a0-a5d3-11ee-0f39-b1f4317c3fd5
 md"""
 ## Under the Hood
 """
 
-# ╔═╡ 49348456-5dfb-48d3-a544-a9bf49e8c755
-struct ViewData
-	center::ComplexF64
-	diameter::Float64
-	resolution::Float64
-end
-
-# ╔═╡ c0ea6f78-a151-40e4-8637-d9396ee8a602
-mandel_view_data = ViewData(-0.5+0.0im, 4.0, 0.001);
-
-# ╔═╡ 78470adf-838d-4016-8987-20097591fd84
-julia_view_data = ViewData(0.0im, 4.0, 0.001);
-
 # ╔═╡ ea61453c-fe85-48ea-a1f6-cba76cd089dc
 struct MandelData
 	f::Function
 	crit::ComplexF64
-	max_iter::UInt32
+	max_iter::Int
 	esc_radius::Float64
 end
-
-# ╔═╡ 6c57b225-ab80-4331-be00-04d30d301568
-mandel_data = MandelData(f, 0.0im, 256, 100.0);
 
 # ╔═╡ 683fb0aa-13d4-4167-b8c0-46be09a4ee23
 struct JuliaData
 	f::Function
 	parameter::ComplexF64
-	max_iter::UInt32
+	max_iter::Int
 	esc_radius::Float64
 end
 
-# ╔═╡ e4b1cf5f-c651-400e-b157-f13be9ad2f24
-julia_data = JuliaData(f, 1.0im, 256, 100.0);
+# ╔═╡ 92cd578c-6c65-4a9f-9926-8cc11d2d0392
+SetData = Union{MandelData, JuliaData};
 
-# ╔═╡ 847b2faa-9d0c-44fe-8fe4-50aab61f6c89
-function view_grid(data::ViewData)
-	δ = data.diameter * data.resolution
-	
-	left = real(data.center) - data.diameter / 2 + 0.5 * δ
-	right = real(data.center) + data.diameter / 2 - 0.5 * δ
-	
-	top = imag(data.center) + data.diameter / 2 - 0.5 * δ
-	bottom = imag(data.center) - data.diameter / 2 + 0.5 * δ
+# ╔═╡ 49348456-5dfb-48d3-a544-a9bf49e8c755
+mutable struct View
+	center::ComplexF64
+	diameter::Float64
+	diameter_pixels::Int
+	image::Array{Float64}
 
-	return [complex(x, y) for y in bottom:δ:top, x in left:δ:right]
+	function View(c, d, p) 
+		v = new(c,d,p)
+		v.image = Array{Float64}(undef, p, p)
+		return v
+	end
 end
+
+# ╔═╡ 704ee9ae-c4bf-494d-98e1-553792138df0
+begin
+	f(z, c) = z^2 + c
+	
+	mandel_data = MandelData(f, 0.0im, 256, 100.0)
+	mandel_view = View(-0.5 + 0.0im, 4.0, 1000)
+
+	julia_data = JuliaData(f, 1.0im, 256, 100.0)
+	julia_view = View(0.0im, 4.0, 1000)
+end;
+
+# ╔═╡ ffd92470-837a-4a0f-a770-11103083843d
+begin
+	transcendental(z, c) = c * sin(z)
+	
+	mandel_data2 = MandelData(transcendental, pi/2 + 0.0im, 256, 100.0)
+	mandel_view2 = View(0.0im, 4.0, 1000)
+
+	julia_data2 = JuliaData(transcendental, 1.0im, 256, 100.0)
+	julia_view2 = View(0.0im, 4.0, 1000)
+end;
 
 # ╔═╡ 1501eb2d-2ad0-4f42-ae6f-a62510b91f2c
 function escape_time(
@@ -118,13 +121,13 @@ function escape_time(
 	z_0::Complex,
 	c::Complex,
 	max_iter::Integer,
-	esc_radius::Real,
+	esc_radius_sqr::Real,
 )
 	z = z_0
 	for iter in 1:max_iter
 		z = f(z, c)
 
-		if abs2(z) > esc_radius
+		if abs2(z) > esc_radius_sqr
 			return (iter + 1 - log2(log(abs(z)))) / 64 % 1.0
 		end
 	end
@@ -132,67 +135,93 @@ function escape_time(
 	return 0.5
 end
 
-# ╔═╡ fe005cf1-613d-4560-8241-fa2da94d09d5
-function color_grid(mandel_data::MandelData, view_data::ViewData)
-	@strided color_grid = escape_time.(
+# ╔═╡ 20b1c6ba-3670-469e-a541-2f8efac731f8
+@btime escape_time(
 		mandel_data.f, 
 		mandel_data.crit,
-		view_grid(view_data),
-		mandel_data.max_iter,
+		0.0+0.0im,
+		1024,
 		mandel_data.esc_radius
 	)
-	return color_grid
+
+# ╔═╡ fe005cf1-613d-4560-8241-fa2da94d09d5
+function update_view!(mandel_data::MandelData, view::View)
+	δ = view.diameter / view.diameter_pixels
+	
+	corner_real = real(view.center) - view.diameter / 2 + 0.5 * δ
+	corner_imag = imag(view.center) - view.diameter / 2 + 0.5 * δ
+
+	corner = complex(corner_real, corner_imag)
+
+	esc_radius_sqr = mandel_data.esc_radius^2
+	
+	Threads.@threads for j in 1:view.diameter_pixels
+		Threads.@threads for i in 1:view.diameter_pixels
+			view.image[i, j] = escape_time(
+				mandel_data.f, 
+				mandel_data.crit,
+				corner + δ * complex(j, i),
+				mandel_data.max_iter,
+				esc_radius_sqr
+			)
+		end
+	end
+	
+	return view
 end
 
 # ╔═╡ d7890110-48a2-48bd-b727-3fa8f2954b2a
-function color_grid(julia_data::JuliaData, view_data::ViewData)
-	@strided color_grid = escape_time.(
-		julia_data.f, 
-		view_grid(view_data),
-		julia_data.parameter,
-		julia_data.max_iter,
-		julia_data.esc_radius
-	)
-	return color_grid
+function update_view!(julia_data::JuliaData, view::View)
+	δ = view.diameter / view.diameter_pixels
+	
+	corner_real = real(view.center) - view.diameter / 2 + 0.5 * δ
+	corner_imag = imag(view.center) - view.diameter / 2 + 0.5 * δ
+
+	corner = complex(corner_real, corner_imag)
+
+	esc_radius_sqr = julia_data.esc_radius^2
+	
+	Threads.@threads for j in 1:view.diameter_pixels
+		Threads.@threads for i in 1:view.diameter_pixels
+			view.image[i, j] = escape_time(
+				julia_data.f, 
+				corner + δ * complex(j, i),
+				julia_data.parameter,
+				julia_data.max_iter,
+				esc_radius_sqr
+			)
+		end
+	end
+	
+	return view
 end
 
-# ╔═╡ 28559071-7938-4393-9338-38fa0d13a803
-mandel_color_levels = color_grid(mandel_data, mandel_view_data);
+# ╔═╡ 339e0566-ed7f-48d7-9866-5147614236ac
+function plot(data::SetData, view::View)
+	update_view!(data, view)
+	width = view.diameter_pixels
+	return heatmap(
+		view.image,
+		aspectratio = :equal,
+		legend = :none,
+		axis=([], false),
+		margins=-2mm,
+		size = (width, width),
+		seriescolor = :twilight,
+	)
+end
 
-# ╔═╡ 64b4e956-00ba-46fb-91d3-212485d9e0eb
-mandel_plot = heatmap(
-	mandel_color_levels,
-	aspectratio = :equal,
-	legend = :none,
-	axis=([], false),
-	margins=-2mm,
-	size = (1000, 1000),
-	seriescolor = :twilight,
-)
+# ╔═╡ 5d053778-0ad4-43dd-a978-dc3e080d51d0
+plot(mandel_data, mandel_view)
+
+# ╔═╡ be2e5eae-dac0-4c1f-970b-51dc0a231315
+plot(julia_data, julia_view)
+
+# ╔═╡ 28559071-7938-4393-9338-38fa0d13a803
+plot(mandel_data2, mandel_view2)
 
 # ╔═╡ 8c13aa65-aefa-4a39-9619-2b9dd8af476b
-julia_color_levels = color_grid(julia_data, julia_view_data);
-
-# ╔═╡ c5ecd0ed-1ec5-4861-bb6d-3d4bd68e520d
-julia_plot = heatmap(
-	julia_color_levels,
-	aspectratio = :equal,
-	legend = :none,
-	axis=([], false),
-	margins=-2mm,
-	size = (1000, 1000),
-	seriescolor = :twilight,
-)
-
-# ╔═╡ b56fb193-43a3-4c40-8e9f-c399da099a8e
-plot(
-	mandel_plot,
-	julia_plot,
-	layout = (1, 2),
-	legend = false,
-	margins=-2mm,
-	size = (1000, 500),
-)
+plot(julia_data2, julia_view2)
 
 # ╔═╡ 68992055-117a-4d61-b60d-fe910f761d79
 md"""
@@ -218,20 +247,16 @@ function MouseMoveInput(id, width=300, height=300)
 	""")
 end
 
-# ╔═╡ bb42244a-5b25-47a7-97d3-12d5c2422011
-@bind my_custom_input MouseMoveInput(300, 300)
-
-# ╔═╡ c7104b22-7e1e-4623-8823-c2f4da45f5db
-my_custom_input
-
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 HypertextLiteral = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Strided = "5e0ebb24-38b0-5f93-81fe-25c709ecae67"
 
 [compat]
+BenchmarkTools = "~1.4.0"
 HypertextLiteral = "~0.9.5"
 Plots = "~1.39.0"
 Strided = "~2.0.4"
@@ -243,7 +268,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.10.0"
 manifest_format = "2.0"
-project_hash = "ef745cc74a2da9742bfe20f4f79c1cd147949093"
+project_hash = "e22a91803ddc5053bd8eb89c40212250575882c0"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -254,6 +279,12 @@ uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+
+[[deps.BenchmarkTools]]
+deps = ["JSON", "Logging", "Printf", "Profile", "Statistics", "UUIDs"]
+git-tree-sha1 = "f1f03a9fa24271160ed7e73051fba3c1a759b53f"
+uuid = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+version = "1.4.0"
 
 [[deps.BitFlags]]
 git-tree-sha1 = "2dc09997850d68179b69dafb58ae806167a32b1b"
@@ -837,6 +868,10 @@ version = "1.4.1"
 deps = ["Unicode"]
 uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
+[[deps.Profile]]
+deps = ["Printf"]
+uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
+
 [[deps.Qt6Base_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Fontconfig_jll", "Glib_jll", "JLLWrappers", "Libdl", "Libglvnd_jll", "OpenSSL_jll", "Vulkan_Loader_jll", "Xorg_libSM_jll", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Xorg_libxcb_jll", "Xorg_xcb_util_cursor_jll", "Xorg_xcb_util_image_jll", "Xorg_xcb_util_keysyms_jll", "Xorg_xcb_util_renderutil_jll", "Xorg_xcb_util_wm_jll", "Zlib_jll", "libinput_jll", "xkbcommon_jll"]
 git-tree-sha1 = "37b7bb7aabf9a085e0044307e1717436117f2b3b"
@@ -1335,33 +1370,30 @@ version = "1.4.1+1"
 # ╟─e1d0cab0-b44f-4613-a79a-6029f1131d76
 # ╟─6ab23e3a-a143-446d-8a9e-3d6f35fa4b8d
 # ╟─944363e1-6e8e-496b-80c2-25815282b675
-# ╟─e9c60488-03b7-4415-9ee3-d18c09144e9c
 # ╟─5cd89527-265f-4516-b117-ce3c1fc69f0f
+# ╠═704ee9ae-c4bf-494d-98e1-553792138df0
+# ╠═5d053778-0ad4-43dd-a978-dc3e080d51d0
+# ╠═be2e5eae-dac0-4c1f-970b-51dc0a231315
 # ╠═ffd92470-837a-4a0f-a770-11103083843d
-# ╠═6c57b225-ab80-4331-be00-04d30d301568
-# ╠═c0ea6f78-a151-40e4-8637-d9396ee8a602
 # ╠═28559071-7938-4393-9338-38fa0d13a803
-# ╠═64b4e956-00ba-46fb-91d3-212485d9e0eb
-# ╠═e4b1cf5f-c651-400e-b157-f13be9ad2f24
-# ╠═78470adf-838d-4016-8987-20097591fd84
 # ╠═8c13aa65-aefa-4a39-9619-2b9dd8af476b
-# ╠═c5ecd0ed-1ec5-4861-bb6d-3d4bd68e520d
-# ╠═b56fb193-43a3-4c40-8e9f-c399da099a8e
+# ╟─2188ffb6-3a97-4e85-8689-0835502a3ebd
+# ╠═01e9ae17-56d2-4903-b29b-b1fc4ce75a83
+# ╠═20b1c6ba-3670-469e-a541-2f8efac731f8
 # ╟─ae6410a0-a5d3-11ee-0f39-b1f4317c3fd5
 # ╠═be839f7a-c2e9-4bce-b2bb-d1ed71cfe1f3
 # ╠═cd0f8f3f-0276-4850-b329-ebcb7398ece0
 # ╠═6263d1a2-8256-4aea-a89f-2fa588ae17f6
-# ╠═49348456-5dfb-48d3-a544-a9bf49e8c755
 # ╠═ea61453c-fe85-48ea-a1f6-cba76cd089dc
 # ╠═683fb0aa-13d4-4167-b8c0-46be09a4ee23
-# ╠═847b2faa-9d0c-44fe-8fe4-50aab61f6c89
+# ╠═92cd578c-6c65-4a9f-9926-8cc11d2d0392
+# ╠═49348456-5dfb-48d3-a544-a9bf49e8c755
 # ╠═1501eb2d-2ad0-4f42-ae6f-a62510b91f2c
 # ╠═fe005cf1-613d-4560-8241-fa2da94d09d5
 # ╠═d7890110-48a2-48bd-b727-3fa8f2954b2a
+# ╠═339e0566-ed7f-48d7-9866-5147614236ac
 # ╟─68992055-117a-4d61-b60d-fe910f761d79
 # ╠═238d9c41-12d7-454a-aff6-7e575facc549
 # ╠═fec327d1-4937-4a8f-be6a-7921bbbc6d2d
-# ╠═bb42244a-5b25-47a7-97d3-12d5c2422011
-# ╠═c7104b22-7e1e-4623-8823-c2f4da45f5db
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
