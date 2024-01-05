@@ -4,6 +4,16 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+end
+
 # ╔═╡ 01e9ae17-56d2-4903-b29b-b1fc4ce75a83
 using BenchmarkTools
 
@@ -18,6 +28,9 @@ using Strided
 
 # ╔═╡ 238d9c41-12d7-454a-aff6-7e575facc549
 using HypertextLiteral
+
+# ╔═╡ d0c6f15c-81d3-4d45-942c-c912028427b6
+using PlutoUI
 
 # ╔═╡ e1d0cab0-b44f-4613-a79a-6029f1131d76
 md"""
@@ -196,6 +209,101 @@ function update_view!(julia_data::JuliaData, view::View)
 	return view
 end
 
+# ╔═╡ 68992055-117a-4d61-b60d-fe910f761d79
+md"""
+## Interactivity Tests
+"""
+
+# ╔═╡ 73a6d6f6-fa9e-4afa-8664-36cead44c2d4
+import AbstractPlutoDingetjes.Display: published_to_js
+
+# ╔═╡ d1115449-a1a4-4d13-8af7-d39bde62dbac
+mutable struct ViewInt
+	center::ComplexF64
+	diameter::Float64
+	diameter_pixels::Int
+	image::Array{UInt16}
+
+	function ViewInt(c, d, p) 
+		v = new(c,d,p)
+		v.image = Array{Int}(undef, p, p)
+		return v
+	end
+end
+
+# ╔═╡ aebb7cf8-4fdd-404e-af66-d8908a0f415f
+function escape_time_int(
+	f::Function,
+	z_0::Complex,
+	c::Complex,
+	max_iter::Integer,
+	esc_radius_sqr::Real,
+)
+	z = z_0
+	for iter in 1:max_iter
+		z = f(z, c)
+
+		if abs2(z) > esc_radius_sqr
+			iter_adjusted = 8 * (iter + 1 - log2(log(abs(z))))
+			return round(UInt16, iter_adjusted) % UInt16(509) + one(UInt16) 
+		end
+	end
+
+	return UInt16(256)
+end
+
+# ╔═╡ 41d40b31-49b8-4252-87a9-3efe5c51917d
+function update_view!(julia_data::JuliaData, view::ViewInt)
+	δ = view.diameter / view.diameter_pixels
+	
+	corner_real = real(view.center) - view.diameter / 2 + 0.5 * δ
+	corner_imag = imag(view.center) + view.diameter / 2 - 0.5 * δ
+
+	corner = complex(corner_real, corner_imag)
+
+	esc_radius_sqr = julia_data.esc_radius^2
+	
+	Threads.@threads for j in 1:view.diameter_pixels
+		Threads.@threads for i in 1:view.diameter_pixels
+			view.image[i, j] = escape_time_int(
+				julia_data.f, 
+				corner + δ * complex(i, -j),
+				julia_data.parameter,
+				julia_data.max_iter,
+				esc_radius_sqr
+			)
+		end
+	end
+	
+	return view
+end
+
+# ╔═╡ 435bbd45-8138-4266-a364-912bc4db7b1f
+function update_view!(mandel_data::MandelData, view::ViewInt)
+	δ = view.diameter / view.diameter_pixels
+	
+	corner_real = real(view.center) - view.diameter / 2 + 0.5 * δ
+	corner_imag = imag(view.center) + view.diameter / 2 - 0.5 * δ
+
+	corner = complex(corner_real, corner_imag)
+
+	esc_radius_sqr = mandel_data.esc_radius^2
+	
+	Threads.@threads for j in 1:view.diameter_pixels
+		Threads.@threads for i in 1:view.diameter_pixels
+			view.image[i, j] = escape_time_int(
+				mandel_data.f, 
+				mandel_data.crit,
+				corner + δ * complex(i, -j),
+				mandel_data.max_iter,
+				esc_radius_sqr
+			)
+		end
+	end
+	
+	return view
+end
+
 # ╔═╡ 339e0566-ed7f-48d7-9866-5147614236ac
 function plot(data::SetData, view::View)
 	update_view!(data, view)
@@ -212,53 +320,167 @@ function plot(data::SetData, view::View)
 end
 
 # ╔═╡ 5d053778-0ad4-43dd-a978-dc3e080d51d0
+# ╠═╡ disabled = true
+#=╠═╡
 plot(mandel_data, mandel_view)
+  ╠═╡ =#
 
 # ╔═╡ be2e5eae-dac0-4c1f-970b-51dc0a231315
+# ╠═╡ disabled = true
+#=╠═╡
 plot(julia_data, julia_view)
+  ╠═╡ =#
 
 # ╔═╡ 28559071-7938-4393-9338-38fa0d13a803
+# ╠═╡ disabled = true
+#=╠═╡
 plot(mandel_data2, mandel_view2)
+  ╠═╡ =#
 
 # ╔═╡ 8c13aa65-aefa-4a39-9619-2b9dd8af476b
+# ╠═╡ disabled = true
+#=╠═╡
 plot(julia_data2, julia_view2)
+  ╠═╡ =#
 
-# ╔═╡ 68992055-117a-4d61-b60d-fe910f761d79
-md"""
-## Interactivity Tests
-"""
+# ╔═╡ 742492cb-5f3b-444c-afae-101f92b5bdfe
+mandel_view_int = ViewInt(-0.5 + 0.0im, 4.0, 1000);
+
+# ╔═╡ ea650663-ff93-4df7-9e64-b5b9b1a9146d
+julia_view_int = ViewInt(0.0im, 4.0, 1000);
+
+# ╔═╡ e6366191-1b64-4153-9c57-3598f820598d
+let
+    x = Dict(
+        "data" => rand(Float64, 20),
+        "name" => "juliette",
+    )
+
+    @htl("""
+    <script>
+    // we interpolate into JavaScript:
+    const x = $(published_to_js(x))
+
+    console.log(x.name, x.data)
+    </script>
+    """)
+end
+
+# ╔═╡ 289d945d-c807-4b1c-9b0d-11f3fb437d54
+begin
+	twilight_colors = Array{UInt8}(undef, 510, 3)
+	for i in 1:510
+		twilight_colors[i, 1] = round(UInt8, 255 * red(cgrad(:twilight)[i]))
+		twilight_colors[i, 2] = round(UInt8, 255 * green(cgrad(:twilight)[i]))
+		twilight_colors[i, 3] = round(UInt8, 255 * blue(cgrad(:twilight)[i]))
+	end
+end
+
+# ╔═╡ a6be3231-8f5a-4cec-be59-fabebead03e4
+function toJSimage(image)
+	js_image = Array{UInt8}(undef, length(image) * 4)
+	
+	Threads.@threads for i in eachindex(image)
+		j = 4 * i - 3
+		js_image[j] = twilight_colors[image[i], 1]
+		js_image[j + 1] = twilight_colors[image[i], 2]
+		js_image[j + 2] = twilight_colors[image[i], 3]
+		js_image[j + 3] = 255
+	end
+	
+	return js_image
+end
 
 # ╔═╡ fec327d1-4937-4a8f-be6a-7921bbbc6d2d
-function MouseMoveInput(id, width=300, height=300)
-	@htl("""
-	<div id="$(id)" style="width: $(width)px; height: $(height)px; border: 1px solid white">
-		<script>
-			const mouseInput = document.getElementById("$(id)");
-	
-			mouseInput.value = [0, 0];
-			
-			mouseInput.addEventListener('mousemove', function(e) {
-				const rect = mouseInput.getBoundingClientRect();
-				mouseInput.value = [Math.floor(e.x-rect.left+1), Math.floor(e.y-rect.top+1)];
-				mouseInput.dispatchEvent(new Event('input'));
-			});
-		</script>
+function show_viewer(data::SetData, view::ViewInt)
+	update_view!(data, view)
+	return @htl("""
+	<span>
+	<div style="width: 100%; text-align: center;">
+	<canvas id="mandelImage" style="height: 100%; width:100%; border: 1px solid white;"></canvas>
 	</div>
+	<script>
+		"use strict";
+		
+		const wrapperSpan = currentScript.parentElement;
+		const mCanvas = wrapperSpan.querySelector("canvas#mandelImage");
+		
+		mCanvas.width = 1000;
+		mCanvas.height = 1000;
+		
+		const mContext = mCanvas.getContext("2d");
+		const mArray = new Uint8ClampedArray($(published_to_js(toJSimage(view.image))));
+		const mImage = mContext.createImageData(mCanvas.width, mCanvas.height);
+	
+		console.log(mArray)
+		mImage.data.set(mArray);
+		mContext.putImageData(mImage, 0, 0)
+	</script>
+	</span>
 	""")
 end
+
+# ╔═╡ 7e01283d-5b2d-4928-91df-b599debbeb32
+@bind mousecoords @htl("""
+	<span>
+	<div style="width: 100%; text-align: center;">
+	<canvas id="mandelImage" style="height: 100%; width:100%; border: 1px solid white;"></canvas>
+	</div>
+	<script>
+		"use strict";
+		
+		const wrapperSpan = currentScript.parentElement;
+		const mCanvas = wrapperSpan.querySelector("canvas#mandelImage");
+		
+		mCanvas.width = 1000;
+		mCanvas.height = 1000;
+		
+		const mContext = mCanvas.getContext("2d");
+		const mArray = new Uint8ClampedArray($(published_to_js(toJSimage(mandel_view_int.image))));
+		const mImage = mContext.createImageData(mCanvas.width, mCanvas.height);
+	
+		console.log(mArray)
+		mImage.data.set(mArray);
+		mContext.putImageData(mImage, 0, 0)
+		
+		wrapperSpan.value = {
+			pointerCoords: [0, 0]
+		};
+		
+		mCanvas.addEventListener('mousemove', function (e) {
+			const rect = mCanvas.getBoundingClientRect();
+			wrapperSpan.value.pointerCoords = [Math.floor(e.x - rect.left + 1), Math.floor(e.y - rect.top + 1)];
+			wrapperSpan.dispatchEvent(new Event('input'));
+		});
+	</script>
+	</span>
+	""")
+
+# ╔═╡ 57b9f498-ee01-4a36-9aff-e0d30dce169b
+mousecoords["pointerCoords"]
+
+# ╔═╡ acdeb4cd-2db4-4709-bfcb-a9e1cc237738
+show_viewer(julia_data, julia_view_int)
+
+# ╔═╡ f52a2687-9810-4b11-9ec0-a770115b2cf7
+show_viewer(mandel_data, mandel_view_int)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+AbstractPlutoDingetjes = "6e696c72-6542-2067-7265-42206c756150"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 HypertextLiteral = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 Strided = "5e0ebb24-38b0-5f93-81fe-25c709ecae67"
 
 [compat]
+AbstractPlutoDingetjes = "~1.2.2"
 BenchmarkTools = "~1.4.0"
 HypertextLiteral = "~0.9.5"
 Plots = "~1.39.0"
+PlutoUI = "~0.7.54"
 Strided = "~2.0.4"
 """
 
@@ -268,7 +490,13 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.10.0"
 manifest_format = "2.0"
-project_hash = "e22a91803ddc5053bd8eb89c40212250575882c0"
+project_hash = "085b9ce96dc9428783dbf9c64e5e4e4453b9b7b8"
+
+[[deps.AbstractPlutoDingetjes]]
+deps = ["Pkg"]
+git-tree-sha1 = "793501dcd3fa7ce8d375a2c878dca2296232686e"
+uuid = "6e696c72-6542-2067-7265-42206c756150"
+version = "1.2.2"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -513,11 +741,23 @@ git-tree-sha1 = "129acf094d168394e80ee1dc4bc06ec835e510a3"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "2.8.1+1"
 
+[[deps.Hyperscript]]
+deps = ["Test"]
+git-tree-sha1 = "8d511d5b81240fc8e6802386302675bdf47737b9"
+uuid = "47d2ed2b-36de-50cf-bf87-49c2cf4b8b91"
+version = "0.0.4"
+
 [[deps.HypertextLiteral]]
 deps = ["Tricks"]
 git-tree-sha1 = "7134810b1afce04bbc1045ca1985fbe81ce17653"
 uuid = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
 version = "0.9.5"
+
+[[deps.IOCapture]]
+deps = ["Logging", "Random"]
+git-tree-sha1 = "d75853a0bdbfb1ac815478bacd89cd27b550ace6"
+uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
+version = "0.2.3"
 
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
@@ -699,6 +939,11 @@ git-tree-sha1 = "c1dd6d7978c12545b4179fb6153b9250c96b0075"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.0.3"
 
+[[deps.MIMEs]]
+git-tree-sha1 = "65f28ad4b594aebe22157d6fac869786a255b7eb"
+uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
+version = "0.1.4"
+
 [[deps.MacroTools]]
 deps = ["Markdown", "Random"]
 git-tree-sha1 = "b211c553c199c111d998ecdaf7623d1b89b69f93"
@@ -851,6 +1096,12 @@ version = "1.39.0"
     IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
     ImageInTerminal = "d8c32880-2388-543b-8c61-d9f865259254"
     Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[[deps.PlutoUI]]
+deps = ["AbstractPlutoDingetjes", "Base64", "ColorTypes", "Dates", "FixedPointNumbers", "Hyperscript", "HypertextLiteral", "IOCapture", "InteractiveUtils", "JSON", "Logging", "MIMEs", "Markdown", "Random", "Reexport", "URIs", "UUIDs"]
+git-tree-sha1 = "bd7c69c7f7173097e7b5e1be07cee2b8b7447f51"
+uuid = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+version = "0.7.54"
 
 [[deps.PrecompileTools]]
 deps = ["Preferences"]
@@ -1394,6 +1645,21 @@ version = "1.4.1+1"
 # ╠═339e0566-ed7f-48d7-9866-5147614236ac
 # ╟─68992055-117a-4d61-b60d-fe910f761d79
 # ╠═238d9c41-12d7-454a-aff6-7e575facc549
+# ╠═73a6d6f6-fa9e-4afa-8664-36cead44c2d4
+# ╠═d0c6f15c-81d3-4d45-942c-c912028427b6
+# ╠═57b9f498-ee01-4a36-9aff-e0d30dce169b
+# ╠═d1115449-a1a4-4d13-8af7-d39bde62dbac
+# ╠═aebb7cf8-4fdd-404e-af66-d8908a0f415f
+# ╠═41d40b31-49b8-4252-87a9-3efe5c51917d
+# ╠═435bbd45-8138-4266-a364-912bc4db7b1f
+# ╠═742492cb-5f3b-444c-afae-101f92b5bdfe
+# ╠═ea650663-ff93-4df7-9e64-b5b9b1a9146d
 # ╠═fec327d1-4937-4a8f-be6a-7921bbbc6d2d
+# ╠═7e01283d-5b2d-4928-91df-b599debbeb32
+# ╠═e6366191-1b64-4153-9c57-3598f820598d
+# ╠═289d945d-c807-4b1c-9b0d-11f3fb437d54
+# ╠═a6be3231-8f5a-4cec-be59-fabebead03e4
+# ╠═acdeb4cd-2db4-4709-bfcb-a9e1cc237738
+# ╠═f52a2687-9810-4b11-9ec0-a770115b2cf7
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
