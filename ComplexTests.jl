@@ -4,16 +4,6 @@
 using Markdown
 using InteractiveUtils
 
-# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
-macro bind(def, element)
-    quote
-        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
-        local el = $(esc(element))
-        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
-        el
-    end
-end
-
 # ╔═╡ 01e9ae17-56d2-4903-b29b-b1fc4ce75a83
 using BenchmarkTools
 
@@ -62,6 +52,30 @@ IMPRESSIONS SO FAR:
 md"""
 ## Plotting Tests
 """
+
+# ╔═╡ 5d053778-0ad4-43dd-a978-dc3e080d51d0
+# ╠═╡ disabled = true
+#=╠═╡
+plot(mandel_data, mandel_view)
+  ╠═╡ =#
+
+# ╔═╡ be2e5eae-dac0-4c1f-970b-51dc0a231315
+# ╠═╡ disabled = true
+#=╠═╡
+plot(julia_data, julia_view)
+  ╠═╡ =#
+
+# ╔═╡ 28559071-7938-4393-9338-38fa0d13a803
+# ╠═╡ disabled = true
+#=╠═╡
+plot(mandel_data2, mandel_view2)
+  ╠═╡ =#
+
+# ╔═╡ 8c13aa65-aefa-4a39-9619-2b9dd8af476b
+# ╠═╡ disabled = true
+#=╠═╡
+plot(julia_data2, julia_view2)
+  ╠═╡ =#
 
 # ╔═╡ 2188ffb6-3a97-4e85-8689-0835502a3ebd
 md"""
@@ -148,15 +162,6 @@ function escape_time(
 	return 0.5
 end
 
-# ╔═╡ 20b1c6ba-3670-469e-a541-2f8efac731f8
-@btime escape_time(
-		mandel_data.f, 
-		mandel_data.crit,
-		0.0+0.0im,
-		1024,
-		mandel_data.esc_radius
-	)
-
 # ╔═╡ fe005cf1-613d-4560-8241-fa2da94d09d5
 function update_view!(mandel_data::MandelData, view::View)
 	δ = view.diameter / view.diameter_pixels
@@ -226,7 +231,7 @@ mutable struct ViewInt
 
 	function ViewInt(c, d, p) 
 		v = new(c,d,p)
-		v.image = Array{Int}(undef, p, p)
+		v.image = Array{UInt16}(undef, p, p)
 		return v
 	end
 end
@@ -245,7 +250,7 @@ function escape_time_int(
 
 		if abs2(z) > esc_radius_sqr
 			iter_adjusted = 8 * (iter + 1 - log2(log(abs(z))))
-			return round(UInt16, iter_adjusted) % UInt16(509) + one(UInt16) 
+			return (round(UInt16, iter_adjusted) % UInt16(509)) + one(UInt16) 
 		end
 	end
 
@@ -319,36 +324,6 @@ function plot(data::SetData, view::View)
 	)
 end
 
-# ╔═╡ 5d053778-0ad4-43dd-a978-dc3e080d51d0
-# ╠═╡ disabled = true
-#=╠═╡
-plot(mandel_data, mandel_view)
-  ╠═╡ =#
-
-# ╔═╡ be2e5eae-dac0-4c1f-970b-51dc0a231315
-# ╠═╡ disabled = true
-#=╠═╡
-plot(julia_data, julia_view)
-  ╠═╡ =#
-
-# ╔═╡ 28559071-7938-4393-9338-38fa0d13a803
-# ╠═╡ disabled = true
-#=╠═╡
-plot(mandel_data2, mandel_view2)
-  ╠═╡ =#
-
-# ╔═╡ 8c13aa65-aefa-4a39-9619-2b9dd8af476b
-# ╠═╡ disabled = true
-#=╠═╡
-plot(julia_data2, julia_view2)
-  ╠═╡ =#
-
-# ╔═╡ 742492cb-5f3b-444c-afae-101f92b5bdfe
-mandel_view_int = ViewInt(-0.5 + 0.0im, 4.0, 1000);
-
-# ╔═╡ ea650663-ff93-4df7-9e64-b5b9b1a9146d
-julia_view_int = ViewInt(0.0im, 4.0, 1000);
-
 # ╔═╡ e6366191-1b64-4153-9c57-3598f820598d
 let
     x = Dict(
@@ -394,73 +369,108 @@ end
 # ╔═╡ fec327d1-4937-4a8f-be6a-7921bbbc6d2d
 function show_viewer(data::SetData, view::ViewInt)
 	update_view!(data, view)
-	return @htl("""
+	htmlplot = @htl("""
 	<span>
-	<div style="width: 100%; text-align: center;">
-	<canvas id="mandelImage" style="height: 100%; width:100%; border: 1px solid white;"></canvas>
-	</div>
-	<script>
+	<table style="text-align: center;">
+		<tr>
+			<td colspan=2><canvas id="mandelImage"></canvas></td>
+		</tr>
+		<tr>
+			<td style="width: 50%">Pointer Coordinates:</td>
+			<td style="width: 50%">(<span id="pointerReal"></span>, <span id="pointerImag"></span>)</td>
+		</tr>
+		<tr>
+			<td style="width: 50%">Last Click Coordinates: </td>
+			<td style="width: 50%">(<span id="clickReal"></span>, <span id="clickImag"></span>)</td>
+		</tr>
+	</table>
+	<script id="something">
 		"use strict";
 		
 		const wrapperSpan = currentScript.parentElement;
 		const mCanvas = wrapperSpan.querySelector("canvas#mandelImage");
 		
-		mCanvas.width = 1000;
-		mCanvas.height = 1000;
+		mCanvas.width = $(view.diameter_pixels);
+		mCanvas.height = $(view.diameter_pixels);
 		
 		const mContext = mCanvas.getContext("2d");
-		const mArray = new Uint8ClampedArray($(published_to_js(toJSimage(view.image))));
+		let mArray = new Uint8ClampedArray($(published_to_js(toJSimage(view.image))));
 		const mImage = mContext.createImageData(mCanvas.width, mCanvas.height);
 	
 		console.log(mArray)
 		mImage.data.set(mArray);
-		mContext.putImageData(mImage, 0, 0)
-	</script>
-	</span>
-	""")
-end
+		mContext.putImageData(mImage, 0, 0);
 
-# ╔═╡ 7e01283d-5b2d-4928-91df-b599debbeb32
-@bind mousecoords @htl("""
-	<span>
-	<div style="width: 100%; text-align: center;">
-	<canvas id="mandelImage" style="height: 100%; width:100%; border: 1px solid white;"></canvas>
-	</div>
-	<script>
-		"use strict";
-		
-		const wrapperSpan = currentScript.parentElement;
-		const mCanvas = wrapperSpan.querySelector("canvas#mandelImage");
-		
-		mCanvas.width = 1000;
-		mCanvas.height = 1000;
-		
-		const mContext = mCanvas.getContext("2d");
-		const mArray = new Uint8ClampedArray($(published_to_js(toJSimage(mandel_view_int.image))));
-		const mImage = mContext.createImageData(mCanvas.width, mCanvas.height);
-	
-		console.log(mArray)
-		mImage.data.set(mArray);
-		mContext.putImageData(mImage, 0, 0)
+		let scale = 650/$(view.diameter_pixels);
+		mContext.scale(scale, scale);
+
+		let centerReal = $(real(view.center))
+		let centerImag = $(imag(view.center))
 		
 		wrapperSpan.value = {
-			pointerCoords: [0, 0]
+			pointer: [centerReal, centerImag],
 		};
-		
+
+		wrapperSpan.querySelector("span#pointerReal").innerHTML = Number.parseFloat(wrapperSpan.value.pointer[0]).toFixed(14);
+		wrapperSpan.querySelector("span#pointerImag").innerHTML = Number.parseFloat(wrapperSpan.value.pointer[1]).toFixed(14);
+		wrapperSpan.querySelector("span#clickReal").innerHTML = Number.parseFloat(wrapperSpan.value.pointer[0]).toFixed(14);
+		wrapperSpan.querySelector("span#clickImag").innerHTML = Number.parseFloat(wrapperSpan.value.pointer[1]).toFixed(14);
+
+		let diam = $(view.diameter);
+		let ppu = mCanvas.width / diam
+
+		function toReal(offset, dim, offsetDim) {
+			let pos = offset - ((offsetDim - dim) / 2);
+			pos = pos < 0 ? 0 : pos > dim ? dim : pos;
+			return centerReal + ((pos - mCanvas.width / 2) / ppu);
+		}
+
+		function toImag(offset, dim, offsetDim) {
+			let pos = offset - ((offsetDim - dim) / 2);
+			pos = pos < 0 ? 0 : pos > dim ? dim : pos;
+			return centerImag - ((pos - mCanvas.height / 2) / ppu);
+		}
+			
 		mCanvas.addEventListener('mousemove', function (e) {
-			const rect = mCanvas.getBoundingClientRect();
-			wrapperSpan.value.pointerCoords = [Math.floor(e.x - rect.left + 1), Math.floor(e.y - rect.top + 1)];
+			let mouseReal = toReal(e.offsetX, e.target.width, e.target.offsetWidth);
+			let mouseImag = toImag(e.offsetY, e.target.height, e.target.offsetHeight);
+			
+			wrapperSpan.querySelector("span#pointerReal").innerHTML = Number.parseFloat(mouseReal).toFixed(14);
+			wrapperSpan.querySelector("span#pointerImag").innerHTML = Number.parseFloat(mouseImag).toFixed(14);
+		});
+
+		mCanvas.addEventListener("click", function (e) {
+			let mouseReal = toReal(e.offsetX, e.target.width, e.target.offsetWidth);
+			let mouseImag = toImag(e.offsetY, e.target.height, e.target.offsetHeight);
+
+			wrapperSpan.querySelector("span#clickReal").innerHTML = Number.parseFloat(mouseReal).toFixed(14);
+			wrapperSpan.querySelector("span#clickImag").innerHTML = Number.parseFloat(mouseImag).toFixed(14);
+
+			wrapperSpan.value.pointer = [mouseReal, mouseImag];
 			wrapperSpan.dispatchEvent(new Event('input'));
 		});
+
+		if (this == null) {
+			console.log("First time running.")
+		} else {
+			console.log(wrapperSpan.value)
+		}
+
+		return wrapperSpan.value
 	</script>
 	</span>
 	""")
+	return htmlplot
+end
 
-# ╔═╡ 57b9f498-ee01-4a36-9aff-e0d30dce169b
-mousecoords["pointerCoords"]
+# ╔═╡ ea650663-ff93-4df7-9e64-b5b9b1a9146d
+julia_view_int = ViewInt(0.0im, 4.0, 650);
 
 # ╔═╡ acdeb4cd-2db4-4709-bfcb-a9e1cc237738
 show_viewer(julia_data, julia_view_int)
+
+# ╔═╡ 742492cb-5f3b-444c-afae-101f92b5bdfe
+mandel_view_int = ViewInt(-0.5 + 0.0im, 4.0, 650);
 
 # ╔═╡ f52a2687-9810-4b11-9ec0-a770115b2cf7
 show_viewer(mandel_data, mandel_view_int)
@@ -1630,7 +1640,6 @@ version = "1.4.1+1"
 # ╠═8c13aa65-aefa-4a39-9619-2b9dd8af476b
 # ╟─2188ffb6-3a97-4e85-8689-0835502a3ebd
 # ╠═01e9ae17-56d2-4903-b29b-b1fc4ce75a83
-# ╠═20b1c6ba-3670-469e-a541-2f8efac731f8
 # ╟─ae6410a0-a5d3-11ee-0f39-b1f4317c3fd5
 # ╠═be839f7a-c2e9-4bce-b2bb-d1ed71cfe1f3
 # ╠═cd0f8f3f-0276-4850-b329-ebcb7398ece0
@@ -1647,19 +1656,17 @@ version = "1.4.1+1"
 # ╠═238d9c41-12d7-454a-aff6-7e575facc549
 # ╠═73a6d6f6-fa9e-4afa-8664-36cead44c2d4
 # ╠═d0c6f15c-81d3-4d45-942c-c912028427b6
-# ╠═57b9f498-ee01-4a36-9aff-e0d30dce169b
 # ╠═d1115449-a1a4-4d13-8af7-d39bde62dbac
 # ╠═aebb7cf8-4fdd-404e-af66-d8908a0f415f
 # ╠═41d40b31-49b8-4252-87a9-3efe5c51917d
 # ╠═435bbd45-8138-4266-a364-912bc4db7b1f
-# ╠═742492cb-5f3b-444c-afae-101f92b5bdfe
-# ╠═ea650663-ff93-4df7-9e64-b5b9b1a9146d
 # ╠═fec327d1-4937-4a8f-be6a-7921bbbc6d2d
-# ╠═7e01283d-5b2d-4928-91df-b599debbeb32
 # ╠═e6366191-1b64-4153-9c57-3598f820598d
 # ╠═289d945d-c807-4b1c-9b0d-11f3fb437d54
 # ╠═a6be3231-8f5a-4cec-be59-fabebead03e4
+# ╠═ea650663-ff93-4df7-9e64-b5b9b1a9146d
 # ╠═acdeb4cd-2db4-4709-bfcb-a9e1cc237738
+# ╠═742492cb-5f3b-444c-afae-101f92b5bdfe
 # ╠═f52a2687-9810-4b11-9ec0-a770115b2cf7
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
