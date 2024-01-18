@@ -5,7 +5,7 @@ using Markdown
 using InteractiveUtils
 
 # ╔═╡ 9d89437a-9f65-4b94-92be-5b4e920756e8
-using GLMakie, Makie
+using GLMakie
 
 # ╔═╡ bd12f5e6-5b14-4567-90e4-06e46eae0ff4
 using Parameters
@@ -24,7 +24,7 @@ GLMakie.activate!(inline=false)
 md"""
 ## User Interface
 
-The main function in this package is the `viewer` which creates a window with plots of the Mandelbrot and Julia sets associated with a complex map.
+The main function in this package is the `viewer` which creates a window with plots of the Mandelbrot and Julia sets associated with a 1-parameter family of complex map.
 """
 
 # ╔═╡ e41efe26-98d8-4bd2-bca4-6fe11c0ac2ba
@@ -92,64 +92,11 @@ md"""
 # ╔═╡ 86738971-2310-4d6c-a97f-49225d2b09b7
 abstract type View end
 
-# ╔═╡ 8fe6630e-8897-462d-afab-4cb0478fe5dd
-function prepare(ax::Axis, array::Observable{Matrix{Float64}})
-	hidedecorations!(ax)
-	hidespines!(ax)
-	Makie.deactivate_interaction!(ax, :rectanglezoom)
-	Makie.deactivate_interaction!(ax, :scrollzoom)
-
-	heatmap!(
-		ax,
-		array,
-		colormap = :twilight,
-		colorrange = (0.0, 1.0)
-	)
-end
-
-# ╔═╡ 9cf29836-53e6-41d2-a03d-fab6c90cf231
-@with_kw mutable struct MandelView <: View
-	axis::Axis
-	pixels::Int = 1000
-	array::Observable{Matrix{Float64}} = 
-		Observable(zeros(Float64, pixels, pixels))
-	
-	center::ComplexF64 = 0.0im
-	diameter::Float64 = 4.0
-	
-	# lastclick::Observable{Point{2, Float32}} = 
-	# 	select_point(axis.scene, marker=:circle)
-
-	function MandelView(ax, pixels, array, args...)
-		prepare(ax, array)
-		return new(ax, pixels, array, args...)
-	end
-end	
-
-# ╔═╡ 5fa5fb3a-92fc-4eac-a93b-f7d2d035ed79
-@with_kw mutable struct JuliaView <: View
-	axis::Axis
-	pixels::Int = 1000
-	array::Observable{Matrix{Float64}} = 
-		Observable(zeros(Float64, pixels, pixels))
-	
-	center::ComplexF64 = 0.0im
-	diameter::Float64 = 4.0
-	parameter::ComplexF64 = 0.0im
-	
-	# lastclick::Observable{Point{2, Float32}} = 
-	# 	select_point(axis.scene, marker=:circle)
-
-	function JuliaView(ax, pixels, array, args...)
-		prepare(ax, array)
-		return new(ax, pixels, array, args...)
-	end
-end	
-
 # ╔═╡ 8bf7700d-5bee-44dc-bfcb-0a479856ff04
-mutable struct ViewOptions
+mutable struct ViewerOptions
 	esc_radius::Float64
 	max_iter::Int
+	orbit_len::Int
 end
 
 # ╔═╡ 44181d32-dd85-4a21-904e-3a7707751e57
@@ -162,10 +109,134 @@ function to_complex(view::View, point)
 	x,  y = point[1], point[2]
 	
 	ppu = view.pixels / view.diameter 
-	x = ((x - 0.5) - view.pixels / 2) / ppu
-	y = ((y - 0.5) - view.pixels / 2) / ppu
+	a = ((x - 0.5) - view.pixels / 2) / ppu
+	b = ((y - 0.5) - view.pixels / 2) / ppu
 	
-	return view.center + complex(x, y)	
+	return view.center + complex(a, b)	
+end
+
+# ╔═╡ 66c2408b-1437-4613-ba42-78ab3740cddb
+function to_image_coords(view::View, z::Number)
+	ppu = view.pixels / view.diameter
+	w = z - view.center
+
+	x = real(w) * ppu + 0.5 + view.pixels / 2
+	y = imag(w) * ppu + 0.5 + view.pixels / 2
+
+	return [x, y]
+end
+
+# ╔═╡ 72440dff-fb23-485f-975a-1a1ce4e9586d
+function to_image_coords(view::View, zs::Vector{<:Number})
+	ppu = view.pixels / view.diameter
+	xs = Float64[]
+	ys = Float64[]
+	
+	for z in zs
+		w = z - view.center
+		push!(xs, real(w) * ppu + 0.5 + view.pixels / 2)
+		push!(ys, imag(w) * ppu + 0.5 + view.pixels / 2)
+	end
+
+	return xs, ys
+end
+
+# ╔═╡ 8fe6630e-8897-462d-afab-4cb0478fe5dd
+function prepare!(view::View)
+	hidedecorations!(view.axis)
+	hidespines!(view.axis)
+	deactivate_interaction!(view.axis, :rectanglezoom)
+	deactivate_interaction!(view.axis, :scrollzoom)
+	deactivate_interaction!(view.axis, :dragpan)
+
+	heatmap!(
+		view.axis,
+		view.array,
+		colormap = :twilight,
+		colorrange = (0.0, 1.0)
+	)
+
+	points = lift(view.points) do zs
+		xs, ys = to_image_coords(view, zs)
+		return Point2f.(xs, ys)
+	end
+		
+	scatterlines!(
+		view.axis,
+		points,
+		marker = :circle,
+		color = :red,
+	)
+end
+
+# ╔═╡ 9cf29836-53e6-41d2-a03d-fab6c90cf231
+@with_kw mutable struct MandelView <: View
+	axis::Axis
+	center::ComplexF64 = 0.0im
+	diameter::Float64 = 4.0
+	pixels::Int = 1000
+
+	init_center::ComplexF64 = center
+	init_diameter::Float64 = diameter
+	
+	array::Observable{Matrix{Float64}} = 
+		Observable(zeros(Float64, pixels, pixels))
+	points::Observable{Vector{ComplexF64}} =
+		Observable([init_center])
+
+	function MandelView(args...)
+		view = new(args...)
+		prepare!(view)
+		return view
+	end
+end	
+
+# ╔═╡ 5fa5fb3a-92fc-4eac-a93b-f7d2d035ed79
+@with_kw mutable struct JuliaView <: View
+	axis::Axis
+	center::ComplexF64 = 0.0im
+	diameter::Float64 = 4.0
+	parameter::ComplexF64 = 0.0im
+	pixels::Int = 1000
+
+	init_center::ComplexF64 = center
+	init_diameter::Float64 = diameter
+	
+	array::Observable{Matrix{Float64}} = 
+		Observable(zeros(Float64, pixels, pixels))
+	points::Observable{Vector{ComplexF64}} =
+		Observable([init_center])
+
+	function JuliaView(args...)
+		view = new(args...)
+		prepare!(view)
+		return view
+	end
+end	
+
+# ╔═╡ 9ed7e5ea-7d60-4126-9a8b-65aa35231894
+function orbit(f::Function, z::Number, c::Number, iterates::Integer)
+	orbit = [z]
+	for i in 1:iterates
+		push!(orbit, f(orbit[end], c))
+	end
+	return orbit
+end
+
+# ╔═╡ d6eee72b-8a98-4ec3-ab83-e338e4b4106a
+function pick_orbit!(
+	julia::JuliaView,
+	d_system::DynamicalSystem,
+	options::ViewerOptions,
+	z::Number,
+)
+	julia.points[] = orbit(
+		d_system.f, 
+		z,
+		julia.parameter,
+		options.orbit_len - 1,
+	)
+	return julia
 end
 
 # ╔═╡ d7ff3d83-ccec-4b13-a514-c6f7b6a6c490
@@ -186,7 +257,7 @@ function update_grid!(
 		corner::ComplexF64,
 		step::Float64,
 		view::MandelView,
-		options::ViewOptions,
+		options::ViewerOptions,
 	)
 	Threads.@threads for j in 1:view.pixels
 		Threads.@threads for i in 1:view.pixels
@@ -209,7 +280,7 @@ function update_grid!(
 		corner::ComplexF64,
 		step::Float64,
 		view::JuliaView,
-		options::ViewOptions,
+		options::ViewerOptions,
 	)
 	Threads.@threads for j in 1:view.pixels
 		Threads.@threads for i in 1:view.pixels
@@ -226,72 +297,222 @@ function update_grid!(
 end
 
 # ╔═╡ d9e43d83-5dc0-4780-99c5-9a313e503ec2
-function update!(view::View, d_system::DynamicalSystem, options::ViewOptions)
+function update!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
 	corner, step = corner_and_step(view)
 	update_grid!(d_system.f, d_system.crit, corner, step, view, options)
 	notify(view.array)
+	notify(view.points)
 
 	return view
+end
+
+# ╔═╡ 999fa8d4-2b82-4c45-a342-0d4246054550
+function reset!(
+	view::View,
+	d_system::DynamicalSystem,
+	options::ViewerOptions,
+	point
+)
+	view.center = view.init_center
+	view.diameter = view.init_diameter
+	update!(view, d_system, options)
+	return view
+end
+
+# ╔═╡ 530e06d3-be09-4eff-a93b-c7374d4626e3
+function centering!(
+	view::View,
+	d_system::DynamicalSystem,
+	options::ViewerOptions,
+	point
+)
+	view.center = to_complex(view, point)
+	update!(view, d_system, options)
+	return view
+end
+
+# ╔═╡ 8f46ae2b-da66-420c-b3a1-f2b9aed2bd72
+function zoom_in!(
+	view::View,
+	d_system::DynamicalSystem,
+	options::ViewerOptions,
+	point,
+)
+	z = to_complex(view, point)
+	view.center = 0.5 * view.center + 0.5 * z
+	view.diameter /= 2.0
+	update!(view, d_system, options)
+	return view
+end
+
+# ╔═╡ 47bc7c61-b166-4d76-b6b5-3786c47d0f2c
+function zoom_out!(
+	view::View,
+	d_system::DynamicalSystem,
+	options::ViewerOptions,
+	point,
+)
+	z = to_complex(view, point)
+	view.center = 2.0 * view.center - z
+	view.diameter *= 2.0
+	update!(view, d_system, options)
+	return view
+end
+
+# ╔═╡ 7d1ebc23-3130-4d3b-bc40-9c1741e18b36
+function pick_parameter!(
+	julia::JuliaView,
+	mandel::MandelView,
+	d_system::DynamicalSystem,
+	options::ViewerOptions,
+	point,
+)
+	julia.parameter = to_complex(mandel, point)
+	mandel.points[] = [julia.parameter]
+		
+	update!(julia, d_system, options)
+	pick_orbit!(julia, d_system, options, julia.points[][begin])
+	return julia
 end
 
 # ╔═╡ bd36ae1f-111d-4df5-b518-1a2e9fdca632
 begin
 @with_kw struct Viewer
 	d_system::DynamicalSystem
-	options::ViewOptions = ViewOptions(100.0, 256)
-	state::ViewerState = ViewerState(:pan)
+	options::ViewerOptions = ViewerOptions(100.0, 200, 1)
+	state::ViewerState = ViewerState(:centering)
 
 	figure::Figure = Figure(figure_padding=10, size=(800, 450))
 	mandel::MandelView = MandelView(
-			axis = Axis(figure[1, 1]),
+			axis = Axis(figure[1, 1][1, 1]),
 			center = -0.5,
 			diameter = 4.0,
-			pixels = 20,
+			pixels = 1000,
 		)
 	julia::JuliaView = JuliaView(
-			axis = Axis(figure[1, 2]),
+			axis = Axis(figure[1, 1][1, 2]),
 			center = 0.0,
 			diameter = 4.0,
-			pixels = 20,
+			pixels = 1000,
 		)
 	
 	function Viewer(d_system, options, state, figure, mandel, julia)	
-		colsize!(figure.layout, 1, Aspect(1, 1.0))
-		colsize!(figure.layout, 2, Aspect(1, 1.0))
+		colsize!(figure.layout, 1, Aspect(1, 2.0))
+		mandel.points[] = [julia.parameter]
+		pick_orbit!(
+			julia,
+			d_system,
+			options,
+			julia.points[][begin],
+		)
 	
 		update!(mandel, d_system, options)
 		update!(julia, d_system, options)
 	
 		buttons = Dict(
-			:pan => Button(figure[2,1][1,1], label="Pan"),
+			:centering => Button(figure[2,1][1,1], label="Center"),
 			:zoom => Button(figure[2,1][1,2], label="Zoom"),
-			:param => Button(figure[2,1][1,3], label="Pick Parameter"),
-			:orbit => Button(figure[2,1][1,4], label="Track Orbit"),
+			:pick => Button(figure[2,1][1,3], label="Pick"),
+			:reset => Button(figure[2,1][1,4], label="Reset")
 		)
 
-		for (symbol, button) in buttons
-			on(button.clicks) do n
-				state.last_button = symbol
-			end
+		labels = Dict(
+			:max_iter => Label(figure[2,1][1,5], "Max Iterations:"),
+			:orbit_len => Label(figure[2,1][1,7], "Orbit Length:"),
+		)
+
+		input_fields = Dict(
+			:max_iter => Textbox(
+				figure[2,1][1,6],
+				width = 80,
+				placeholder = string(options.max_iter), 
+				validator = Int,
+			),
+			:orbit_len => Textbox(
+				figure[2,1][1,8],
+				width = 80,
+				placeholder = string(options.orbit_len), 
+				validator = Int,
+			),
+		)
+
+		on(input_fields[:max_iter].stored_string) do s
+		    options.max_iter = parse(Int, s)
+			update!(julia, d_system, options)
+			update!(mandel, d_system, options)
+		end
+
+		on(input_fields[:orbit_len].stored_string) do s
+		    options.orbit_len = parse(Int, s)
+			pick_orbit!(
+				julia,
+				d_system,
+				options,
+				julia.points[][begin],
+			)
 		end
 		
-		# on(mandel.lastclick) do point
-		# 	if state.last_button == :pan
-		# 		pan!(mandel, d_system, options, point)
-		# 	elseif state.last_button == :zoom
-		# 		zoom_in!(mandel, d_system, options, point)
-		# 	elseif state.last_button == :param
-		# 		pick_parameter!(julia, mandel, d_system, options, point)
-		# 	end
-		# end
-	
-		# on(julia.lastclick) do point
-		# 	if state.last_button == :pan
-		# 		pan!(julia, d_system, options, point)
-		# 	elseif state.last_button == :zoom
-		# 		zoom_in!(julia, d_system, options, point)
-		# 	end
-		# end
+		button_non_active_color = buttons[:centering].buttoncolor[]
+		label_non_active_color = buttons[:centering].labelcolor[]
+		button_active_color = buttons[:centering].buttoncolor_active[]
+		label_active_color = buttons[:centering].labelcolor_active[]
+
+		buttons[state.last_button].buttoncolor[] = button_active_color
+		buttons[state.last_button].labelcolor[] = label_active_color
+		
+		for (symbol, button1) in buttons
+			on(button1.clicks) do n
+				state.last_button = symbol
+				for (_, button2) in buttons
+					button2.buttoncolor[] = button_non_active_color
+					button2.labelcolor[] = label_non_active_color
+				end
+				button1.buttoncolor[] = button_active_color
+				button1.labelcolor[] = label_active_color
+			end
+		end
+
+		for view in [mandel, julia]
+			scene = view.axis.scene
+			axis = view.axis
+			
+			on(events(scene).mousebutton, priority=2) do event
+				point = mouseposition(scene)
+		        if event.button == Mouse.left && is_mouseinside(axis)
+		            if event.action == Mouse.press
+						if state.last_button == :zoom
+							zoom_in!(view, d_system, options, point)
+						elseif state.last_button == :centering
+							centering!(view, d_system, options, point)
+						elseif state.last_button == :reset
+							reset!(view, d_system, options, point)
+						end
+					end
+				elseif event.button == Mouse.right && is_mouseinside(axis)
+					if event.action == Mouse.press && state.last_button == :zoom
+						zoom_out!(view, d_system, options, point)
+					end
+				end
+			end
+		end
+
+		on(events(mandel.axis.scene).mousebutton, priority=2) do event
+			point = mouseposition(mandel.axis.scene)
+			if event.button == Mouse.left && is_mouseinside(mandel.axis)
+				if event.action == Mouse.press && state.last_button == :pick
+					pick_parameter!(julia, mandel, d_system, options, point)
+				end
+			end
+		end
+
+		on(events(julia.axis.scene).mousebutton, priority=2) do event
+			point = mouseposition(julia.axis.scene)
+			if event.button == Mouse.left && is_mouseinside(julia.axis)
+				if event.action == Mouse.press && state.last_button == :pick
+					pick_orbit!(julia, d_system, options, to_complex(julia, point))
+				end
+			end
+		end
 		
 		return new(d_system, options, state, figure, mandel, julia)
 	end
@@ -318,91 +539,14 @@ end
 # ╔═╡ 9b695f3a-cff1-40c8-8ea9-1030efee8eed
 display(viewer.figure)
 
-# ╔═╡ 06c8afb7-7f10-4755-9132-028c00dbe3ce
-begin
-	events_log = []
-	on(events(viewer.mandel.axis).mousebutton) do event
-		 if event.button == Mouse.left && is_mouseinside(viewer.mandel.axis)
-			if event.action == Mouse.release
-				mp = mouseposition(viewer.mandel.axis)
-				push!(events_log, to_complex(viewer.mandel, mp))
-			end
-	    end
-	end
-end
-
-# ╔═╡ 1b106fee-da70-45c1-b5bb-00894d23e655
-events_log
-
-# ╔═╡ abf05a2b-c974-4160-9653-7fd5a5f6c262
-for (interaction, _) in interactions(viewer.mandel.axis)
-	deregister_interaction!(viewer.mandel.axis, interaction)
-end
-
-# ╔═╡ 055b9cc6-c4f9-43ab-8ff7-c7c8414f3c45
-interactions(viewer.mandel.axis)
-
-# ╔═╡ 54d9900b-4fe0-4443-9fe5-834d07013915
-interactions(viewer.julia.axis)
-
-# ╔═╡ 530e06d3-be09-4eff-a93b-c7374d4626e3
-function pan!(view::View, d_system::DynamicalSystem, options::ViewOptions, point)
-	view.center = to_complex(view, point)
-	update!(view, d_system, options)
-	return view
-end
-
-# ╔═╡ 8f46ae2b-da66-420c-b3a1-f2b9aed2bd72
-function zoom_in!(
-	view::View,
-	d_system::DynamicalSystem,
-	options::ViewOptions,
-	point,
-)
-	z = to_complex(view, point)
-	view.center = 0.5 * view.center + 0.5 * z
-	view.diameter /= 2.0
-	update!(view, d_system, options)
-	return view
-end
-
-# ╔═╡ 47bc7c61-b166-4d76-b6b5-3786c47d0f2c
-function zoom_out!(
-	view::View,
-	d_system::DynamicalSystem,
-	options::ViewOptions,
-	point,
-)
-	z = to_complex(view, point)
-	view.center = 0.5 * view.center + 0.5 * z
-	view.diameter /= 2.0
-	update!(view, d_system, options)
-	return view
-end
-
-# ╔═╡ 7d1ebc23-3130-4d3b-bc40-9c1741e18b36
-function pick_parameter!(
-	julia::JuliaView,
-	mandel::MandelView,
-	d_system::DynamicalSystem,
-	options::ViewOptions,
-	point,
-)
-	julia.parameter = to_complex(mandel, point)
-	update!(julia, d_system, options)
-	return julia
-end
-
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
-Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 
 [compat]
 GLMakie = "~0.9.5"
-Makie = "~0.20.4"
 Parameters = "~0.12.3"
 """
 
@@ -412,7 +556,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.10.0"
 manifest_format = "2.0"
-project_hash = "947efd60dcee70613835e82c80d63265490d493d"
+project_hash = "784272f2f58e2ebef16f8cab0f457d6005c9023d"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -2031,11 +2175,6 @@ version = "3.5.0+0"
 # ╟─e41efe26-98d8-4bd2-bca4-6fe11c0ac2ba
 # ╠═c0aadb12-de5a-4adb-9e4f-a2152d361601
 # ╠═9b695f3a-cff1-40c8-8ea9-1030efee8eed
-# ╠═06c8afb7-7f10-4755-9132-028c00dbe3ce
-# ╠═1b106fee-da70-45c1-b5bb-00894d23e655
-# ╠═abf05a2b-c974-4160-9653-7fd5a5f6c262
-# ╠═055b9cc6-c4f9-43ab-8ff7-c7c8414f3c45
-# ╠═54d9900b-4fe0-4443-9fe5-834d07013915
 # ╟─912b8e85-ff15-451b-9aa4-1af113cee9a9
 # ╟─506a9ccf-d4a8-4e6f-ac63-681f8849a63c
 # ╟─e453b5d1-260a-4228-a396-3864bd66fe93
@@ -2049,10 +2188,15 @@ version = "3.5.0+0"
 # ╠═8bf7700d-5bee-44dc-bfcb-0a479856ff04
 # ╠═44181d32-dd85-4a21-904e-3a7707751e57
 # ╠═e505780e-c803-420d-ae3d-6143429cf0c7
+# ╠═66c2408b-1437-4613-ba42-78ab3740cddb
+# ╠═72440dff-fb23-485f-975a-1a1ce4e9586d
+# ╠═999fa8d4-2b82-4c45-a342-0d4246054550
 # ╠═530e06d3-be09-4eff-a93b-c7374d4626e3
 # ╠═8f46ae2b-da66-420c-b3a1-f2b9aed2bd72
 # ╠═47bc7c61-b166-4d76-b6b5-3786c47d0f2c
 # ╠═7d1ebc23-3130-4d3b-bc40-9c1741e18b36
+# ╠═9ed7e5ea-7d60-4126-9a8b-65aa35231894
+# ╠═d6eee72b-8a98-4ec3-ab83-e338e4b4106a
 # ╠═d7ff3d83-ccec-4b13-a514-c6f7b6a6c490
 # ╠═d9e43d83-5dc0-4780-99c5-9a313e503ec2
 # ╠═d2952032-5e0b-456c-a37c-657d06834613
