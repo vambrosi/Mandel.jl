@@ -17,9 +17,6 @@ md"""
 This is a Julia package to explore complex dynamical systems. More specifically, you can define a complex map and plot its Mandelbrot and Julia sets, draw rays, track orbits over that map, etc.
 """
 
-# ╔═╡ 0af146d2-ded3-4df3-a5d3-8706c530f8d4
-GLMakie.activate!(inline=false)
-
 # ╔═╡ dc586c63-2952-4b02-9d18-2829cc0b8797
 md"""
 ## User Interface
@@ -160,12 +157,13 @@ function prepare!(view::View)
 		xs, ys = to_image_coords(view, zs)
 		return Point2f.(xs, ys)
 	end
-		
+	
 	scatterlines!(
 		view.axis,
 		points,
 		marker = :circle,
-		color = :red,
+		color = (:red, 0.5),
+		markercolor = (:red, 1.0),
 	)
 end
 
@@ -310,8 +308,7 @@ end
 function reset!(
 	view::View,
 	d_system::DynamicalSystem,
-	options::ViewerOptions,
-	point
+	options::ViewerOptions
 )
 	view.center = view.init_center
 	view.diameter = view.init_diameter
@@ -382,22 +379,21 @@ begin
 	options::ViewerOptions = ViewerOptions(100.0, 200, 1)
 	state::ViewerState = ViewerState(:centering)
 
-	figure::Figure = Figure(figure_padding=10, size=(800, 450))
+	figure::Figure = Figure(figure_padding=10, size=(760, 450))
 	mandel::MandelView = MandelView(
-			axis = Axis(figure[1, 1][1, 1]),
+			axis = Axis(figure[1, 1][1, 1], aspect=AxisAspect(1)),
 			center = -0.5,
 			diameter = 4.0,
 			pixels = 1000,
 		)
 	julia::JuliaView = JuliaView(
-			axis = Axis(figure[1, 1][1, 2]),
+			axis = Axis(figure[1, 1][1, 2], aspect=AxisAspect(1)),
 			center = 0.0,
 			diameter = 4.0,
 			pixels = 1000,
 		)
 	
 	function Viewer(d_system, options, state, figure, mandel, julia)	
-		colsize!(figure.layout, 1, Aspect(1, 2.0))
 		mandel.points[] = [julia.parameter]
 		pick_orbit!(
 			julia,
@@ -408,30 +404,67 @@ begin
 	
 		update!(mandel, d_system, options)
 		update!(julia, d_system, options)
+		colsize!(figure.layout, 1, Relative(1.0))
+
+		colgap!(content(figure[1,1]), 10)
+		
+		mandel_reset = Button(
+			figure[1,1][1,1],
+			label="Reset",
+			halign=0.98,
+			valign=0.99,
+		)
+		mandel_reset.tellheight = false
+		mandel_reset.tellwidth = false
+
+		on(mandel_reset.clicks, priority=3) do event
+			reset!(mandel, d_system, options)
+			return Consume(true)
+		end
+
+		julia_reset = Button(
+			figure[1,1][1,2],
+			label="Reset",
+			halign=0.98,
+			valign=0.99,
+		)
+		julia_reset.tellheight = false
+		julia_reset.tellwidth = false
+
+		on(julia_reset.clicks, priority=3) do event
+			reset!(julia, d_system, options)
+			return Consume(true)
+		end
 	
 		buttons = Dict(
-			:centering => Button(figure[2,1][1,1], label="Center"),
-			:zoom => Button(figure[2,1][1,2], label="Zoom"),
-			:pick => Button(figure[2,1][1,3], label="Pick"),
-			:reset => Button(figure[2,1][1,4], label="Reset")
+			:centering => Button(figure[2,1][1,1], label="Choose\nCenter"),
+			:zoom => Button(figure[2,1][1,2], label="Click\nZoom"),
+			:pick => Button(figure[2,1][1,3], label="Choose\nPoint"),
 		)
 
 		labels = Dict(
-			:max_iter => Label(figure[2,1][1,5], "Max Iterations:"),
-			:orbit_len => Label(figure[2,1][1,7], "Orbit Length:"),
+			:max_iter => Label(figure[2,1][1,4], "Maximum\nIterations:"),
+			:orbit_len => Label(figure[2,1][1,6], "Orbit\nLength:"),
+			:orbit_len => Label(figure[2,1][1,8], "Escape\nRadius:"),
 		)
 
 		input_fields = Dict(
 			:max_iter => Textbox(
-				figure[2,1][1,6],
-				width = 80,
+				figure[2,1][1,5],
+				width = 60,
 				placeholder = string(options.max_iter), 
 				validator = Int,
 			),
 			:orbit_len => Textbox(
-				figure[2,1][1,8],
-				width = 80,
+				figure[2,1][1,7],
+				width = 60,
 				placeholder = string(options.orbit_len), 
+				validator = Int,
+			),
+			:esc_radius => Textbox(
+				figure[2,1][1,9],
+				width = 60,
+				placeholder = string(options.esc_radius), 
 				validator = Int,
 			),
 		)
@@ -450,6 +483,12 @@ begin
 				options,
 				julia.points[][begin],
 			)
+		end
+
+		on(input_fields[:esc_radius].stored_string) do s
+		    options.esc_radius = parse(Float64, s)
+			update!(julia, d_system, options)
+			update!(mandel, d_system, options)
 		end
 		
 		button_non_active_color = buttons[:centering].buttoncolor[]
@@ -484,8 +523,6 @@ begin
 							zoom_in!(view, d_system, options, point)
 						elseif state.last_button == :centering
 							centering!(view, d_system, options, point)
-						elseif state.last_button == :reset
-							reset!(view, d_system, options, point)
 						end
 					end
 				elseif event.button == Mouse.right && is_mouseinside(axis)
@@ -529,6 +566,9 @@ end
 	
 end
 
+# ╔═╡ 96e1ff32-6a15-405c-b1ed-e58cfb27c93c
+open_viewer(viewer::Viewer) = display(GLMakie.Screen(), viewer.figure)
+
 # ╔═╡ c0aadb12-de5a-4adb-9e4f-a2152d361601
 viewer = let
 	f(z, c) = z^2 + c
@@ -536,8 +576,8 @@ viewer = let
 	Viewer(f, crit; mandel_center=0.0im)
 end
 
-# ╔═╡ 9b695f3a-cff1-40c8-8ea9-1030efee8eed
-display(viewer.figure)
+# ╔═╡ 2e69d4fe-c597-4baf-8821-1e6943093551
+open_viewer(viewer)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2169,12 +2209,12 @@ version = "3.5.0+0"
 # ╔═╡ Cell order:
 # ╟─7e6b0c70-b049-11ee-020c-210725a84206
 # ╠═9d89437a-9f65-4b94-92be-5b4e920756e8
-# ╠═0af146d2-ded3-4df3-a5d3-8706c530f8d4
 # ╟─dc586c63-2952-4b02-9d18-2829cc0b8797
 # ╠═bd36ae1f-111d-4df5-b518-1a2e9fdca632
+# ╠═96e1ff32-6a15-405c-b1ed-e58cfb27c93c
 # ╟─e41efe26-98d8-4bd2-bca4-6fe11c0ac2ba
 # ╠═c0aadb12-de5a-4adb-9e4f-a2152d361601
-# ╠═9b695f3a-cff1-40c8-8ea9-1030efee8eed
+# ╠═2e69d4fe-c597-4baf-8821-1e6943093551
 # ╟─912b8e85-ff15-451b-9aa4-1af113cee9a9
 # ╟─506a9ccf-d4a8-4e6f-ac63-681f8849a63c
 # ╟─e453b5d1-260a-4228-a396-3864bd66fe93
