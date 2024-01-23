@@ -407,6 +407,8 @@ begin
 		colsize!(figure.layout, 1, Relative(1.0))
 
 		colgap!(content(figure[1,1]), 10)
+
+		axis_button_pressed = false
 		
 		mandel_reset = Button(
 			figure[1,1][1,1],
@@ -417,8 +419,9 @@ begin
 		mandel_reset.tellheight = false
 		mandel_reset.tellwidth = false
 
-		on(mandel_reset.clicks, priority=3) do event
+		on(mandel_reset.clicks, priority=200) do event
 			reset!(mandel, d_system, options)
+			axis_button_pressed = true
 			return Consume(true)
 		end
 
@@ -431,8 +434,9 @@ begin
 		julia_reset.tellheight = false
 		julia_reset.tellwidth = false
 
-		on(julia_reset.clicks, priority=3) do event
+		on(julia_reset.clicks, priority=200) do event
 			reset!(julia, d_system, options)
+			axis_button_pressed = true
 			return Consume(true)
 		end
 	
@@ -445,7 +449,7 @@ begin
 		labels = Dict(
 			:max_iter => Label(figure[2,1][1,4], "Maximum\nIterations:"),
 			:orbit_len => Label(figure[2,1][1,6], "Orbit\nLength:"),
-			:orbit_len => Label(figure[2,1][1,8], "Escape\nRadius:"),
+			:esc_radius => Label(figure[2,1][1,8], "Escape\nRadius:"),
 		)
 
 		input_fields = Dict(
@@ -465,7 +469,7 @@ begin
 				figure[2,1][1,9],
 				width = 60,
 				placeholder = string(options.esc_radius), 
-				validator = Int,
+				validator = Float64,
 			),
 		)
 
@@ -515,7 +519,12 @@ begin
 			scene = view.axis.scene
 			axis = view.axis
 			
-			on(events(scene).mousebutton, priority=2) do event
+			on(events(scene).mousebutton) do event
+				if axis_button_pressed
+					axis_button_pressed = false
+					return Consume(false)
+				end
+				
 				point = mouseposition(scene)
 		        if event.button == Mouse.left && is_mouseinside(axis)
 		            if event.action == Mouse.press
@@ -530,25 +539,40 @@ begin
 						zoom_out!(view, d_system, options, point)
 					end
 				end
+				return Consume(false)
 			end
 		end
 
-		on(events(mandel.axis.scene).mousebutton, priority=2) do event
+		on(events(mandel.axis.scene).mousebutton) do event
+			if axis_button_pressed
+				axis_button_pressed = false
+				return Consume(false)
+			end
+			
 			point = mouseposition(mandel.axis.scene)
 			if event.button == Mouse.left && is_mouseinside(mandel.axis)
 				if event.action == Mouse.press && state.last_button == :pick
 					pick_parameter!(julia, mandel, d_system, options, point)
 				end
 			end
+
+			return Consume(false)
 		end
 
-		on(events(julia.axis.scene).mousebutton, priority=2) do event
+		on(events(julia.axis.scene).mousebutton) do event
+			if axis_button_pressed
+				axis_button_pressed = false
+				return Consume(false)
+			end
+			
 			point = mouseposition(julia.axis.scene)
 			if event.button == Mouse.left && is_mouseinside(julia.axis)
 				if event.action == Mouse.press && state.last_button == :pick
 					pick_orbit!(julia, d_system, options, to_complex(julia, point))
 				end
 			end
+
+			return Consume(false)
 		end
 		
 		return new(d_system, options, state, figure, mandel, julia)
@@ -578,6 +602,9 @@ end
 
 # ╔═╡ 2e69d4fe-c597-4baf-8821-1e6943093551
 open_viewer(viewer)
+
+# ╔═╡ ad453dc9-6366-490f-a1dc-6d569d6ac0bd
+Makie.save("test.png", viewer.figure)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2215,6 +2242,7 @@ version = "3.5.0+0"
 # ╟─e41efe26-98d8-4bd2-bca4-6fe11c0ac2ba
 # ╠═c0aadb12-de5a-4adb-9e4f-a2152d361601
 # ╠═2e69d4fe-c597-4baf-8821-1e6943093551
+# ╠═ad453dc9-6366-490f-a1dc-6d569d6ac0bd
 # ╟─912b8e85-ff15-451b-9aa4-1af113cee9a9
 # ╟─506a9ccf-d4a8-4e6f-ac63-681f8849a63c
 # ╟─e453b5d1-260a-4228-a396-3864bd66fe93
