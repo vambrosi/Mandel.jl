@@ -24,6 +24,9 @@ md"""
 The main function in this package is the `viewer` which creates a window with plots of the Mandelbrot and Julia sets associated with a 1-parameter family of complex map.
 """
 
+# ╔═╡ 3a47c88b-0328-4c88-9ece-566ea75cc747
+
+
 # ╔═╡ e41efe26-98d8-4bd2-bca4-6fe11c0ac2ba
 md"""
 ## Testing the Package
@@ -39,6 +42,17 @@ md"""
 ### 2D Plots
 """
 
+# ╔═╡ c0aadb12-de5a-4adb-9e4f-a2152d361601
+# ╠═╡ disabled = true
+# ╠═╡ skip_as_script = true
+#=╠═╡
+let
+	@variables z, c
+	d_system = DynamicalSystem(z, c, z^2 + c, 0.0)
+	new_window(Viewer(d_system, mandel_center=-0.5))
+end
+  ╠═╡ =#
+
 # ╔═╡ dbab0ee3-851f-48a2-a005-076f09b928d8
 # ╠═╡ disabled = true
 # ╠═╡ skip_as_script = true
@@ -46,7 +60,7 @@ md"""
 let
 	@variables z, c
 	d_system = DynamicalSystem(z, c, z^2 + c/z^2, c^(0.25))
-	new_window(Viewer(d_system))
+	new_window(Viewer(d_system; mandel_diam=0.75))
 end
   ╠═╡ =#
 
@@ -57,7 +71,7 @@ end
 let
 	@variables z, c
 	d_system = DynamicalSystem(z, c, c * cos(z), 0.0)
-	new_window(Viewer(d_system))
+	new_window(Viewer(d_system; mandel_diam=2*pi, julia_diam=2*pi))
 end
   ╠═╡ =#
 
@@ -68,7 +82,7 @@ end
 let
 	@variables z, c
 	d_system = DynamicalSystem(z, c, c * sin(z), pi / 2)
-	new_window(Viewer(d_system))
+	new_window(Viewer(d_system; mandel_diam=2*pi, julia_diam=2*pi))
 end
   ╠═╡ =#
 
@@ -79,7 +93,7 @@ end
 let
 	@variables z, c
 	d_system = DynamicalSystem(z, c, z^2 - c * z, c / 2)
-	new_window(Viewer(d_system))
+	new_window(Viewer(d_system; mandel_center=-1.0, mandel_diam=7.0))
 end
   ╠═╡ =#
 
@@ -90,7 +104,7 @@ end
 let
 	@variables z, c
 	d_system = DynamicalSystem(z, c, (z^2 - c) / (z^2 - 1), 0.0)
-	new_window(Viewer(d_system))
+	new_window(Viewer(d_system; mandel_diam=6.0, julia_diam=6.0))
 end
   ╠═╡ =#
 
@@ -101,7 +115,7 @@ end
 let
 	@variables z, c
 	d_system = DynamicalSystem(z, c, c * (1 + z / 3) ^ 3, -3.0)
-	new_window(Viewer(d_system))
+	new_window(Viewer(d_system; mandel_center=-1.77, mandel_diam=8, julia_diam=16))
 end
   ╠═╡ =#
 
@@ -112,7 +126,30 @@ end
 let
 	@variables z, c
 	d_system = DynamicalSystem(z, c, z^2 + c / z^3, (3 * c / 2) ^ (1 / 5))
-	new_window(Viewer(d_system))
+	new_window(Viewer(d_system; mandel_diam=0.75))
+end
+  ╠═╡ =#
+
+# ╔═╡ 36271d9a-e85f-4552-bd4c-6e32154255b3
+# ╠═╡ disabled = true
+#=╠═╡
+let
+	@variables z, c
+	f = z^3 + c*z + 1
+	df = expand_derivatives(Differential(z)(f))
+	d_system = DynamicalSystem(z, c, z - f / df, 0.0)
+	new_window(Viewer(d_system; coloring_algorithm=stop_time))
+end
+  ╠═╡ =#
+
+# ╔═╡ 6d99c8d0-0145-43ce-951e-ce3398cd2a8e
+# ╠═╡ disabled = true
+# ╠═╡ skip_as_script = true
+#=╠═╡
+let
+	@variables z, c
+	d_system = DynamicalSystem(z, c, c * z / (z^2 + 1), 1.0)
+	new_window(Viewer(d_system; coloring_algorithm=escape_preperiod))
 end
   ╠═╡ =#
 
@@ -120,42 +157,6 @@ end
 md"""
 ### 3D Plots
 """
-
-# ╔═╡ 98d6e8ee-04b0-42f1-9e0d-08e32feb9c61
-# ╠═╡ disabled = true
-# ╠═╡ skip_as_script = true
-#=╠═╡
-let
-	# Polynomial map: z^2 + c
-	f(pt, c) = Point(pt.u^2 + c * pt.v^2, pt.v^2)
-	viewer = Viewer3D(f, -0.12711+0.75706im)
-	new_window(viewer)
-end
-  ╠═╡ =#
-
-# ╔═╡ b938042a-c567-4048-9bad-a95b9ffd1159
-# ╠═╡ disabled = true
-# ╠═╡ skip_as_script = true
-#=╠═╡
-let
-	# Rational map: z^2 + c/z^2
-	f(pt, c) = Point(pt.u^4 + c * pt.v^4, pt.v^2 * pt.u^2)
-	viewer = Viewer3D(f, -0.35891)
-	new_window(viewer)
-end
-  ╠═╡ =#
-
-# ╔═╡ d5f6a202-52b6-4aaf-9722-3bba5ce33d3b
-# ╠═╡ disabled = true
-# ╠═╡ skip_as_script = true
-#=╠═╡
-let
-	# Rational map: z^2 + c/z^2
-	f(pt, c) = Point(pt.u^4 + c * pt.v^4, pt.v^2 * pt.u^2)
-	viewer = Viewer3D(f, -1.4996769e-5)
-	new_window(viewer)
-end
-  ╠═╡ =#
 
 # ╔═╡ 912b8e85-ff15-451b-9aa4-1af113cee9a9
 md"""
@@ -166,24 +167,6 @@ md"""
 md"""
 ### Dynamics of a Complex Function
 """
-
-# ╔═╡ e453b5d1-260a-4228-a396-3864bd66fe93
-# ╠═╡ disabled = true
-#=╠═╡
-"""
-	DynamicalSystem(f, crit)
-
-Store a 1-family of maps of the complex plane to itself.
-
-# Arguments:
-- `f::Function`: function with two inputs ``f(z, c) = f_c(z)``.
-- `crit::Function`: function that gives a critical point for each value of the parameter.
-"""
-struct DynamicalSystem
-	f::Function
-	crit::Function
-end
-  ╠═╡ =#
 
 # ╔═╡ 35cb94f2-a867-4662-8e9b-24fbf548294e
 struct DynamicalSystem
@@ -273,7 +256,6 @@ function escape_preperiod(
 	)
 	esc_radius_sqr = esc_radius ^ 2
 	inv_radius_sqr = 1 / (1e6 * esc_radius_sqr)
-
 	
 	tortoise = hare = z0
 
@@ -399,60 +381,122 @@ md"""
 ### Dynamics of Rational Maps in ``\mathbb{C}P^1``
 """
 
+# ╔═╡ 2aa3b67f-21f3-470e-b08e-8bbd0375fb85
+function to_point_map(z::Num, c::Num, expr::Num)
+	@variables u, v
+	frac = simplify(substitute(expr, Dict([z => u / v])))
+	value = Symbolics.value(frac)
+	
+	if value isa Number
+		return (pt, param) -> Point(value, 1.0)
+	end
+
+	n, d = Symbolics.arguments(value)
+	fu = eval(build_function(n, u, v, c, expression=Val{false}))
+	fv = eval(build_function(d, u, v, c, expression=Val{false}))
+
+	return (pt, param) -> Point(fu(pt.u, pt.v, param), fv(pt.u, pt.v, param))
+end
+
+# ╔═╡ a20cd477-8cc4-47e5-96cc-72ecb76d5a70
+struct RationalMap
+	f::Function
+	df_variable::Function
+	df_parameter::Function
+	
+	variable::Num
+	parameter::Num
+	
+	expr::Num
+
+	function RationalMap(z, c, expr)
+		f = to_point_map(z, c, expr)
+
+		df_dz = expand_derivatives(Differential(z)(expr))
+		df_variable = to_point_map(z, c, df_dz)
+
+		df_dc = expand_derivatives(Differential(c)(expr))
+		df_parameter = to_point_map(z, c, df_dc)
+
+		return new(f, df_variable, df_parameter, z, c, expr)
+	end
+end		
+
 # ╔═╡ d1951ea8-99e7-4108-894a-8e3a4dc01a03
 """
-	multiplier(f, pt, c, ε, max_iter)
+	multiplier(f, df, pt, c, ε, max_iter)
 
 Return the multiplier of a rational map ``f_c`` at the point `pt`.
 """
-function multiplier(f::Function, pt::Point, c::Number, ε::Real, max_iter::Integer)
+function multiplier(
+	f::Function,
+	df::Function,
+	pt::Point,
+	c::Number,
+	ε::Real,
+	max_iter::Integer
+)
     tortoise = hare = pt
     ε_sqr = ε^2
 
-    # In case condition is not triggered
-    period_multiple = max_iter + 1
+	iter = 1
+	period_multiple = 1
+	while iter <= max_iter
+		tortoise = f(tortoise, c)
+		hare = f(f(hare, c), c)
 
-    # Finds first time z_n and z_2n are close
-    for iter in 1:max_iter
-        tortoise = f(tortoise, c)
-        hare = f(f(hare, c), c)
+		if d_sqr!(hare, tortoise) <= ε_sqr
+			period_multiple = iter
+			break
+		end
 
-        if d_sqr!(tortoise, hare) < ε_sqr
-            period_multiple = iter
-            break
-        end
-    end
+		iter += 1
+	end
+	
+	if iter == max_iter + 1
+		return 0.5
+	end
 
-    # Exits if n is bigger than max_iter
-    if period_multiple == max_iter + 1
-        return 0.5
-    end
+	μ = 1
+	iter = 1
+	period = 1
+	while iter <= period_multiple
+		tortoise = f(tortoise, c)
+		# μ *= df(tortoise, c)
 
-    # Finds next time they get close
-    period = period_multiple + 1
-    for iter in 1:period_multiple
-        tortoise = f(tortoise, c)
+		if d_sqr!(hare, tortoise) <= ε_sqr
+			period = iter
+			break
+		end
 
-        if d_sqr!(tortoise, hare) < ε_sqr
-            period = iter
-            break
-        end
-    end
+		iter += 1
+	end
 
-    # Finds preperiod
-    tortoise = pt
-    preperiod = max_iter + 1
-    for iter in 0:max_iter
-        if d_sqr!(tortoise, hare) < ε_sqr
-            preperiod = iter
-            break
-        end
+	if iter == period_multiple + 1
+		return 0.5
+	end
 
-        tortoise = f(tortoise, c)
-        hare = f(hare, c)
-    end
+	tortoise = pt
+	iter = 0
+	preperiod = 0
+	while iter <= max_iter
+		if d_sqr!(hare, tortoise) <= ε_sqr
+			preperiod = iter
+			break
+		end
 
-    return mod(preperiod / (128 * period), 1.0)
+		tortoise = f(tortoise, c)
+		hare = f(hare, c)
+		iter += 1
+	end
+
+	if iter == max_iter + 1
+		return 0.5
+	end
+
+	ε = d_sqr!(hare, tortoise)
+
+	return mod((preperiod / period) / 64.0, 1.0)
 end
 
 # ╔═╡ 74046f6a-2db4-4898-b70b-d14d2eb5bbbb
@@ -466,64 +510,74 @@ mutable struct Viewer3DOptions
 	max_iter::Int
 end
 
-# ╔═╡ 4a4ac9dd-05b7-4457-a66b-0bc74cd5113b
-struct Viewer3D
-	rational_map::Function
-	parameter::ComplexF64
-	
-	figure::Figure
-	axis::LScene
-	
-	texture::Matrix{Float64}
-	options::Viewer3DOptions
+# ╔═╡ 73a18f49-a9b9-4dae-8a93-1f2d88476bdc
+function initialize!(
+	texture::Observable{Matrix{Float64}},
+	grid::Matrix{Point},
+	f::Function,
+	df::Function,
+	parameter::Number,
+	options::Viewer3DOptions,
+)
+	w, h = size(grid) 
+	δ = pi / (w - 1)
 
-	function Viewer3D(rational_map, parameter)
-		options = Viewer3DOptions(1e-4, 200)
-		figure = Figure(size = (800, 800))
-		axis = LScene(figure[1, 1], show_axis = false)
+	Threads.@threads for i in 0:(w - 1)
+		Threads.@threads for j in 0:(h - 1)
+			φ = i * δ
+			θ = j * δ
 
-		w = 1001
-		h = 2 * w - 1
-		δ = pi / (w - 1)
-		
-		texture = Array{Float64}(undef, w, h)
-
-		Threads.@threads for i in 0:(w - 1)
-			Threads.@threads for j in 0:(h - 1)
-				φ = i * δ
-				θ = j * δ
-				pt = Point(sin(φ) * exp(- im * θ), 1 - cos(φ))
-				
-				texture[i + 1, j + 1] = multiplier(
-					rational_map,
-					pt,
-					parameter,
-					options.ε,
-					options.max_iter,
-				)
-			end
+			pt = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
+			grid[i + 1, j + 1] = pt
+			
+			texture[][i + 1, j + 1] = multiplier(
+				f,
+				df,
+				pt,
+				parameter,
+				options.ε,
+				options.max_iter,
+			)
 		end
-
-		plt = mesh!(
-			Sphere(Point3f(0), 1.0),
-			color = texture,
-			colormap=:twilight,
-			colorrange = (0.0, 1.0),
-			shading = FastShading,
-			eyeposition = Vec3f(0, 0, -2),
-		)
-
-		# cam = cameracontrols(axis.scene)
-		# cam.lookat[] = [0.0, 0.0, 0.0]
-		# cam.eyeposition[] = [0.0, 0.0, -4.25]
-		# update_cam!(axis.scene, cam)
-
-		return new(rational_map, parameter, figure, axis, texture, options)
 	end
+
+	return 
 end
 
-# ╔═╡ 9a7cc902-79a1-43a3-9d0d-128aff876cbb
-new_window(viewer::Viewer3D) = display(GLMakie.Screen(), viewer.figure)
+# ╔═╡ 80851560-417e-4108-ada8-094bf27db820
+function update!(
+	texture::Observable{Matrix{Float64}},
+	grid::Matrix{Point},
+	f::Function, 
+	df::Function, 
+	parameter::Number,
+	options::Viewer3DOptions,
+	u0::Number,
+	v0::Number,
+	r::Number,
+)
+
+	Threads.@threads for i in eachindex(grid)
+		grid[i] = Point(
+			r * v0 * grid[i].u + (1 - r) * u0 * grid[i].v,
+			v0 * grid[i].v
+		)
+
+		divide!(grid[i], sqrt(norm2(grid[i])))
+		
+		texture[][i] = multiplier(
+			f,
+			df,
+			grid[i],
+			parameter,
+			options.ε,
+			options.max_iter,
+		)
+	end
+	
+	notify(texture)
+	return 
+end
 
 # ╔═╡ 5b827c95-7b46-45b7-9844-50e30fe30ce1
 md"""
@@ -538,6 +592,7 @@ mutable struct ViewerOptions
 	esc_radius::Float64
 	max_iter::Int
 	orbit_len::Int
+	crit_len::Int
 	coloring_algorithm::Function
 end
 
@@ -631,6 +686,13 @@ function prepare!(view::View)
 		xs, ys = to_image_coords(view, zs)
 		return Point2f.(xs, ys)
 	end
+
+	lines!(
+		view.axis,
+		marks,
+		color = (:blue, 0.5),
+		inspectable = false,
+	)
 	
 	scatter!(
 		view.axis,
@@ -736,14 +798,14 @@ end
 
 # ╔═╡ d2952032-5e0b-456c-a37c-657d06834613
 function update_grid!(
-		f::Function,
-		df_variable::Function,
-		crit::Function,
-		corner::ComplexF64,
-		step::Float64,
-		view::MandelView,
-		options::ViewerOptions,
-	)
+	view::MandelView,
+	f::Function,
+	df_variable::Function,
+	crit::Function,
+	corner::ComplexF64,
+	step::Float64,
+	options::ViewerOptions,
+)
 	Threads.@threads for j in 1:view.pixels
 		Threads.@threads for i in 1:view.pixels
 			c = corner + step * complex(i, j)
@@ -761,14 +823,14 @@ end
 
 # ╔═╡ 198dd8e9-f1f1-463f-a320-5f03411c3f83
 function update_grid!(
-		f::Function,
-		df_variable::Function,
-		crit::Function,
-		corner::ComplexF64,
-		step::Float64,
-		view::JuliaView,
-		options::ViewerOptions,
-	)
+	view::JuliaView,
+	f::Function,
+	df_variable::Function,
+	crit::Function,
+	corner::ComplexF64,
+	step::Float64,
+	options::ViewerOptions,
+)
 	Threads.@threads for j in 1:view.pixels
 		Threads.@threads for i in 1:view.pixels
 			z = corner + step * complex(i, j)
@@ -788,13 +850,13 @@ end
 function update!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
 	corner, step = corner_and_step(view)
 	update_grid!(
+		view,
 		d_system.f,
 		d_system.df_variable,
 		d_system.crit,
 		corner,
 		step,
-		view,
-		options
+		options,
 	)
 	notify(view.array)
 	notify(view.points)
@@ -802,6 +864,90 @@ function update!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
 
 	return view
 end
+
+# ╔═╡ 4a4ac9dd-05b7-4457-a66b-0bc74cd5113b
+struct Viewer3D
+	rational_map::RationalMap
+	parameter::ComplexF64
+	
+	figure::Figure
+	axis::LScene
+
+	grid::Matrix{Point}
+	texture::Observable{Matrix{Float64}}
+	options::Viewer3DOptions
+	camera::Camera3D
+
+	function Viewer3D(z, c, expr, parameter)
+		rational_map = RationalMap(z, c, expr)
+		options = Viewer3DOptions(1e-4, 200)
+		figure = Figure(size = (800, 800))
+		axis = LScene(figure[1, 1], show_axis = false)
+		cam = Camera3D(axis.scene)
+
+		w = 1001
+		h = 2 * w - 1
+
+		grid = Array{Point}(undef, w, h)
+		texture = Observable(Array{Float64}(undef, w, h))
+
+		initialize!(texture, grid, rational_map.f, rational_map.df_variable,
+			parameter, options)
+
+		plt = mesh!(
+			Sphere(Point3f(0), 1.0),
+			color = texture,
+			colormap=:twilight,
+			colorrange = (0.0, 1.0),
+			shading = FastShading,
+			eyeposition = Vec3f(0, 0, -2),
+		)
+
+		focus = lift(cam.eyeposition) do eye
+			x, y, z = eye
+			return eye / sqrt(x^2 + y^2 + z^2)
+		end
+
+		scatter!(axis, focus, color = :red)
+
+		colsize!(figure.layout, 1, Relative(0.95))
+		rowsize!(figure.layout, 1, Aspect(1, 1))
+	
+		zoom_in = Button(figure[2,1][1,1], label="Zoom In")
+		zoom_out = Button(figure[2,1][1,2], label="Zoom Out")
+	
+		on(zoom_in.clicks) do event
+			x, y, z = convert(Vector{Float64}, focus[])
+			u0 = complex(x, y)
+			v0 = 1 - z
+			update!(texture, grid, rational_map.f, rational_map.df_variable,
+				parameter, options, u0, v0, 0.5)
+		end
+	
+		on(zoom_out.clicks) do event
+			x, y, z = convert(Vector{Float64}, focus[])
+			u0 = complex(x, y)
+			v0 = 1 - z
+			update!(texture, grid, rational_map.f, rational_map.df_variable,
+				parameter, options, u0, v0, 2.0)
+		end
+
+		return new(rational_map, parameter, figure, axis,
+			grid, texture, options, cam)
+	end
+end
+
+# ╔═╡ d5f6a202-52b6-4aaf-9722-3bba5ce33d3b
+# ╠═╡ skip_as_script = true
+#=╠═╡
+viewer = let
+	@variables z, c
+	Viewer3D(z, c, z^2 + c/z^2, -1.4996769e-5)
+end;
+  ╠═╡ =#
+
+# ╔═╡ 9a7cc902-79a1-43a3-9d0d-128aff876cbb
+new_window(viewer::Viewer3D) = display(GLMakie.Screen(), viewer.figure)
 
 # ╔═╡ 530e06d3-be09-4eff-a93b-c7374d4626e3
 function centering!(
@@ -852,6 +998,18 @@ function pick_parameter!(
 	point,
 )
 	julia.parameter = to_complex(mandel, point)
+	julia.init_center = d_system.crit(julia.parameter) 
+	if isapprox(julia.diameter, julia.init_diameter)
+		julia.center = julia.init_center
+	end
+	
+	julia.marks[] = orbit(
+		d_system.f, 
+		julia.init_center,
+		julia.parameter,
+		options.crit_len - 1,
+	)
+
 	mandel.points[] = [julia.parameter]
 		
 	update!(julia, d_system, options)
@@ -910,17 +1068,6 @@ function reset!(
 	return view
 end
 
-# ╔═╡ 0f397698-6eb2-4391-9e35-02e6494c660e
-"""
-	clear!(view)
-
-Remove blue marks added to the `view`.
-"""
-function clear!(view::View)
-	view.marks[] = ComplexF64[]
-	return view
-end
-
 # ╔═╡ 248d7bb1-908a-464a-9532-48c2f0bf4d24
 function add_view_buttons(
 	position,
@@ -947,16 +1094,8 @@ function add_view_buttons(
 		pressed = true
 		return Consume(true)
 	end
-
-	clear_button = Button(buttons[1, 3], label="Clear")
-
-	on(clear_button.clicks, priority=200) do event
-		clear!(view)
-		pressed = true
-		return Consume(true)
-	end
 	
-	reset_button = Button(buttons[1, 4], label="Reset")
+	reset_button = Button(buttons[1, 3], label="Reset")
 	
 	on(reset_button.clicks, priority=200) do event
 		reset!(view, d_system, options)
@@ -975,26 +1114,37 @@ struct Viewer
 	mandel::MandelView
 	julia::JuliaView
 	
-	function Viewer(d_system; coloring_algorithm=escape_time)
-		options = ViewerOptions(100.0, 200, 1, coloring_algorithm)
-		state = ViewerState(:centering)
-		figure = Figure(figure_padding=10, size=(760, 450))
+	function Viewer(
+			d_system;
+			mandel_center=0.0im,
+			mandel_diam=4.0,
+			julia_diam=4.0,
+			coloring_algorithm=escape_time,
+		)
+		options = ViewerOptions(100.0, 200, 1, 1, coloring_algorithm)
+		state = ViewerState(:pick)	
+		figure = Figure(figure_padding=10, size=(900, 510))
 
 		mandel = MandelView(
 			axis = Axis(figure[1, 1][1, 1], aspect=AxisAspect(1)),
-			center = 0.0,
-			diameter = 4.0,
+			center = mandel_center,
+			diameter = mandel_diam,
 			pixels = 1000,
 		)
 
 		julia = JuliaView(
 			axis = Axis(figure[1, 1][1, 2], aspect=AxisAspect(1)),
-			center = 0.0,
-			diameter = 4.0,
+			center = d_system.crit(mandel_center),
+			diameter = julia_diam,
+			parameter = mandel_center,
 			pixels = 1000,
 		)
+
+		mandel.inspectable[] = state.last_button == :pick
+		julia.inspectable[] = state.last_button == :pick
 		
 		mandel.points[] = [julia.parameter]
+		julia.marks[] = [d_system.crit(julia.parameter)]
 		pick_orbit!(
 			julia,
 			d_system,
@@ -1023,7 +1173,8 @@ struct Viewer
 		labels = Dict(
 			:max_iter => Label(figure[2,1][1,4], "Maximum\nIterations:"),
 			:orbit_len => Label(figure[2,1][1,6], "Orbit\nLength:"),
-			:esc_radius => Label(figure[2,1][1,8], "Escape\nRadius:"),
+			:crit_len => Label(figure[2,1][1,8], "Critical Point\nOrbit Length:"),
+			:esc_radius => Label(figure[2,1][1,10], "Escape\nRadius:"),
 		)
 
 		input_fields = Dict(
@@ -1039,8 +1190,14 @@ struct Viewer
 				placeholder = string(options.orbit_len), 
 				validator = Int,
 			),
-			:esc_radius => Textbox(
+			:crit_len => Textbox(
 				figure[2,1][1,9],
+				width = 60,
+				placeholder = string(options.orbit_len), 
+				validator = Int,
+			),
+			:esc_radius => Textbox(
+				figure[2,1][1,11],
 				width = 60,
 				placeholder = string(options.esc_radius), 
 				validator = Float64,
@@ -1060,6 +1217,16 @@ struct Viewer
 				d_system,
 				options,
 				julia.points[][begin],
+			)
+		end
+
+		on(input_fields[:crit_len].stored_string) do s
+		    options.crit_len = parse(Int, s)
+			julia.marks[] = orbit(
+				d_system.f, 
+				julia.init_center,
+				julia.parameter,
+				options.orbit_len - 1,
 			)
 		end
 
@@ -1115,9 +1282,6 @@ struct Viewer
 				elseif event.button == Mouse.right && is_mouseinside(axis)
 					if event.action == Mouse.press && state.last_button == :zoom
 						zoom_out!(view, d_system, options, point)
-					elseif event.action == Mouse.press && state.last_button == :pick
-						push!(view.marks[], to_complex(view, point))
-						notify(view.marks)
 					end
 				end
 				return Consume(false)
@@ -1163,36 +1327,25 @@ end
 # ╔═╡ 96e1ff32-6a15-405c-b1ed-e58cfb27c93c
 new_window(viewer::Viewer) = display(GLMakie.Screen(), viewer.figure)
 
-# ╔═╡ c0aadb12-de5a-4adb-9e4f-a2152d361601
+# ╔═╡ 98d6e8ee-04b0-42f1-9e0d-08e32feb9c61
+# ╠═╡ skip_as_script = true
+#=╠═╡
+let
+	# Polynomial map: z^2 + c
+	@variables z, c
+	viewer = Viewer3D(z, c, z^2 + c, -0.12711+0.75706im)
+	new_window(viewer)
+end
+  ╠═╡ =#
+
+# ╔═╡ b938042a-c567-4048-9bad-a95b9ffd1159
 # ╠═╡ disabled = true
 # ╠═╡ skip_as_script = true
 #=╠═╡
 let
 	@variables z, c
-	d_system = DynamicalSystem(z, c, z^2 + c, 0.0)
-	new_window(Viewer(d_system))
-end
-  ╠═╡ =#
-
-# ╔═╡ 36271d9a-e85f-4552-bd4c-6e32154255b3
-# ╠═╡ disabled = true
-#=╠═╡
-let
-	@variables z, c
-	f = z^3 + c*z + 1
-	df = expand_derivatives(Differential(z)(f))
-	d_system = DynamicalSystem(z, c, z - f / df, 0.0)
-	new_window(Viewer(d_system; coloring_algorithm=stop_time))
-end
-  ╠═╡ =#
-
-# ╔═╡ 6d99c8d0-0145-43ce-951e-ce3398cd2a8e
-# ╠═╡ skip_as_script = true
-#=╠═╡
-let
-	@variables z, c
-	d_system = DynamicalSystem(z, c, c * z / (z^2 + 1), 1.0)
-	new_window(Viewer(d_system; coloring_algorithm=escape_preperiod))
+	viewer = Viewer3D(z, c, z^2 + c/z^2, -0.35891)
+	new_window(viewer)
 end
   ╠═╡ =#
 
@@ -3080,6 +3233,7 @@ version = "3.5.0+0"
 # ╟─dc586c63-2952-4b02-9d18-2829cc0b8797
 # ╠═bd36ae1f-111d-4df5-b518-1a2e9fdca632
 # ╠═248d7bb1-908a-464a-9532-48c2f0bf4d24
+# ╠═3a47c88b-0328-4c88-9ece-566ea75cc747
 # ╠═96e1ff32-6a15-405c-b1ed-e58cfb27c93c
 # ╟─e41efe26-98d8-4bd2-bca4-6fe11c0ac2ba
 # ╟─a32bc905-7988-4a9e-8f5f-b3f3a667e300
@@ -3100,20 +3254,23 @@ version = "3.5.0+0"
 # ╠═d5f6a202-52b6-4aaf-9722-3bba5ce33d3b
 # ╟─912b8e85-ff15-451b-9aa4-1af113cee9a9
 # ╟─506a9ccf-d4a8-4e6f-ac63-681f8849a63c
-# ╠═e453b5d1-260a-4228-a396-3864bd66fe93
 # ╠═35cb94f2-a867-4662-8e9b-24fbf548294e
 # ╠═789d85e3-7695-4f4c-8e7b-25a8c165224c
 # ╠═6130a49f-fa88-45e0-be06-a3abdf9fa5ca
-# ╠═7ae30a23-a3dd-467b-971d-95b59546237a
+# ╟─7ae30a23-a3dd-467b-971d-95b59546237a
 # ╟─d8eb50c6-4841-43bd-88dc-55c99a7cc1de
 # ╟─375e0d25-c75b-4a81-8de3-ad359219bfa1
 # ╟─53298b95-1b72-4341-9695-2e0613b526ef
 # ╟─744d5285-3b8b-4b3f-b134-f38c5188f269
 # ╟─0572a371-36cc-431a-8814-c429cedeb5e3
 # ╟─20e6e203-cf03-43d7-a492-6ef0985821c2
-# ╟─d1951ea8-99e7-4108-894a-8e3a4dc01a03
+# ╠═a20cd477-8cc4-47e5-96cc-72ecb76d5a70
+# ╠═2aa3b67f-21f3-470e-b08e-8bbd0375fb85
+# ╠═d1951ea8-99e7-4108-894a-8e3a4dc01a03
 # ╟─74046f6a-2db4-4898-b70b-d14d2eb5bbbb
 # ╠═4a4ac9dd-05b7-4457-a66b-0bc74cd5113b
+# ╠═73a18f49-a9b9-4dae-8a93-1f2d88476bdc
+# ╠═80851560-417e-4108-ada8-094bf27db820
 # ╠═227a2dc3-a1bc-49e4-ad3a-e454ff785990
 # ╠═9a7cc902-79a1-43a3-9d0d-128aff876cbb
 # ╟─5b827c95-7b46-45b7-9844-50e30fe30ce1
@@ -3141,6 +3298,5 @@ version = "3.5.0+0"
 # ╠═a18d68a6-2a4d-4aa7-831b-cc9825d965e8
 # ╠═6f77d98b-23cc-4d31-8195-55cd46308f7b
 # ╠═999fa8d4-2b82-4c45-a342-0d4246054550
-# ╠═0f397698-6eb2-4391-9e35-02e6494c660e
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
