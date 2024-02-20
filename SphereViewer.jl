@@ -41,12 +41,33 @@ md"""
 # ╔═╡ ac9b7a30-4aba-47de-9895-ec9f2bba8575
 const Point = MVector{2, ComplexF64}
 
+# ╔═╡ a03082e2-330e-49a1-a207-a2003b3477b7
+function from_cartesian_coordinates(vector::AbstractVector)
+	v = normalize(vector)
+	unit = normalize(sqrt(complex(v[1], v[2])))
+	
+	u = unit * sqrt((1 - v[3]) / 2)
+	v = conj(unit) * sqrt((1 + v[3]) / 2)
+	
+	return Point(u, v)
+end
+
+# ╔═╡ 0fa1d8d7-ba75-4932-863d-b06e318b1606
+function from_spherical_coordinates(η::Real, ξ::Real)
+	ηsin, ηcos = sincos(η)
+	w = cis(ξ / 2)
+	
+	u = w * ηsin
+	v = conj(w) * ηcos
+	return Point(u, v)
+end
+
 # ╔═╡ c66f0fc9-3623-4e82-9078-e9f3be2ed11c
 const Mobius = MMatrix{2, 2, ComplexF64}
 
 # ╔═╡ 5ed856b9-eb09-49b3-943c-2172e43e09d4
 function zoom_mobius(eye, r)
-	center = Point(complex(eye[1], eye[2]), 1 - eye[3])
+	center = from_cartesian_coordinates(eye)
 	return Mobius(r * center[2], 0, (1 - r) * center[1], center[2])
 end
 
@@ -216,14 +237,15 @@ function initialize!(
 	options::Viewer3DOptions,
 )
 	w, h = size(grid) 
-	δ = pi / (w - 1)
+	δξ = pi / (w - 1)
+	δη = δξ / 2
 
 	Threads.@threads for i in 0:(w - 1)
 		Threads.@threads for j in 0:(h - 1)
-			φ = i * δ
-			θ = j * δ
+			ξ = j * δξ
+			η = i * δη
 
-			grid[i + 1, j + 1] = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
+			grid[i + 1, j + 1] = from_spherical_coordinates(η, ξ)
 			
 			texture[][i + 1, j + 1] = multiplier(
 				f,
@@ -345,7 +367,7 @@ end
 new_window(viewer::Viewer3D) = display(GLMakie.Screen(), viewer.figure)
 
 # ╔═╡ 22558ca6-51c5-4a1c-9fe1-108c9dcbbc72
-begin
+let
 	@variables z, c
 	viewer = Viewer3D(z, c, z^2 + c, -0.12711+0.75706im)
 	new_window(viewer)
@@ -2236,7 +2258,9 @@ version = "3.5.0+0"
 # ╠═22558ca6-51c5-4a1c-9fe1-108c9dcbbc72
 # ╟─1f1a6ac9-5019-4b32-b9ec-e596b24a5a06
 # ╠═0b495fc3-4053-41b9-8889-854caf7c1db8
-# ╟─5ed856b9-eb09-49b3-943c-2172e43e09d4
+# ╠═a03082e2-330e-49a1-a207-a2003b3477b7
+# ╠═0fa1d8d7-ba75-4932-863d-b06e318b1606
+# ╠═5ed856b9-eb09-49b3-943c-2172e43e09d4
 # ╟─128eb380-b46d-4873-ab2a-5502f39c2cfc
 # ╟─bf44f696-7a92-42e2-85a4-d322f6d37735
 # ╠═7be93fed-f9b2-4271-9afb-e0fed340766d
