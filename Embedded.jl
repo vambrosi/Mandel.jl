@@ -4,6 +4,16 @@
 using Markdown
 using InteractiveUtils
 
+# This Pluto notebook uses @bind for interactivity. When running this notebook outside of Pluto, the following 'mock version' of @bind gives bound variables a default value (instead of an error).
+macro bind(def, element)
+    quote
+        local iv = try Base.loaded_modules[Base.PkgId(Base.UUID("6e696c72-6542-2067-7265-42206c756150"), "AbstractPlutoDingetjes")].Bonds.initial_value catch; b -> missing; end
+        local el = $(esc(element))
+        global $(esc(def)) = Core.applicable(Base.get, el) ? Base.get(el) : iv(el)
+        el
+    end
+end
+
 # ╔═╡ 7ca0bea0-d4e6-11ee-0acc-639605e39050
 begin
 	using Pkg
@@ -11,7 +21,7 @@ begin
 	Pkg.instantiate()
 	
 	include("./src/Mandel.jl")
-	using .Mandel
+	using .Mandel, PlutoUI
 
 	mandel = Mandel.mandel
 	julia = Mandel.julia
@@ -37,14 +47,15 @@ md"""
 Then, call `julia(f)` or `mandel(f)` to plot the respective sets.
 """
 
-# ╔═╡ 1d93dadf-964b-4f20-904b-94e26ec59918
-mandel(f; center=-0.5)
+# ╔═╡ 26ed5acd-6513-4406-ad6b-e4dda954fb0c
+julia(f; c=-0.11446945971361885 + 0.7428114463258763im)
 
-# ╔═╡ c80bcd93-4721-4507-9c17-00b8972090ef
-julia(f; c=-0.12711+0.75706im)
-
-# ╔═╡ e7e56282-cc36-498a-8bd6-82bd1fa81cbd
-julia(f; c=-0.12711+0.75706im, coloring_alg=:projective_convergence)
+# ╔═╡ fe15ced3-6678-46d5-9b8f-7496e1707a3a
+julia(
+	f;
+	c=-0.11446945971361885 + 0.7428114463258763im,
+	coloring_alg=:projective_convergence
+)
 
 # ╔═╡ 13d8745b-fb7d-481f-8f5d-67b72c806da2
 md"""
@@ -54,6 +65,17 @@ The variable `coloring_alg` chooses the coloring algorithm for the plot. The opt
 - `:escape_time` 
 - `:projective_convergence`.
 """
+
+# ╔═╡ d25169ce-0698-4af3-b402-1c89a1f0655b
+md"""
+You can also connect the tracker of the `mandel` plot to the parameter of the `julia` plot by using the pattern below. (This interface will be improved soon.)
+"""
+
+# ╔═╡ 1d93dadf-964b-4f20-904b-94e26ec59918
+@bind point mandel(f; center=-0.5)
+
+# ╔═╡ c80bcd93-4721-4507-9c17-00b8972090ef
+julia(f; c=point)
 
 # ╔═╡ 66d4ccf1-ac02-42a3-b02c-6992efb8a84b
 md"""
@@ -67,9 +89,11 @@ This section imports the relevant functions.
 # ╟─d9d42585-e924-4175-9fe1-d7aa30baace9
 # ╠═6ea317f3-3332-4485-a62a-f74d3a5eae01
 # ╟─23b6ed24-13e1-41ee-98a7-66bd0e2a8a4f
+# ╠═26ed5acd-6513-4406-ad6b-e4dda954fb0c
+# ╠═fe15ced3-6678-46d5-9b8f-7496e1707a3a
+# ╟─13d8745b-fb7d-481f-8f5d-67b72c806da2
+# ╟─d25169ce-0698-4af3-b402-1c89a1f0655b
 # ╠═1d93dadf-964b-4f20-904b-94e26ec59918
 # ╠═c80bcd93-4721-4507-9c17-00b8972090ef
-# ╠═e7e56282-cc36-498a-8bd6-82bd1fa81cbd
-# ╟─13d8745b-fb7d-481f-8f5d-67b72c806da2
 # ╟─66d4ccf1-ac02-42a3-b02c-6992efb8a84b
 # ╠═7ca0bea0-d4e6-11ee-0acc-639605e39050

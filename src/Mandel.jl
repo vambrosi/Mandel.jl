@@ -2,7 +2,7 @@ module Mandel
 
 export mandel, julia
 
-using StaticArraysCore, LinearAlgebra, Symbolics, PlutoPlotly, HypertextLiteral, AbstractPlutoDingetjes
+using StaticArraysCore, LinearAlgebra, Symbolics, PlutoPlotly, HypertextLiteral, AbstractPlutoDingetjes, PlutoUI
 
 # --------------------------------------------------------------------------- #
 # Complex Projective Line
@@ -121,6 +121,11 @@ algorithms = Dict(:escape_time => escape_time, :projective_convergence => projec
 # Grid calculations
 # --------------------------------------------------------------------------- #
 
+mutable struct Viewer
+	pluto_code::HypertextLiteral.Result
+	tracked_point::ComplexF64
+end
+
 to_range(raw_range, n) = range(minimum(raw_range), maximum(raw_range); length=n)
 
 function grid(f, c, xrange, yrange, is_mandel, algorithm)
@@ -173,10 +178,10 @@ function view(
 		zmin = 0.0, zmax = 1.0,
 		showscale = false,
 		name = is_mandel ? "Mandel" : "Julia",
-		hoverinfo = "skip",
+		hoverinfo = "none",
 	)
 
-	points = scatter(x=[], y=[], mode="markers+lines", name="Tracker")
+	points = scatter(x=[0.0], y=[0.0], mode="markers+lines", name="Tracker")
 
 	p = plot(
 		[data, points],
@@ -227,9 +232,15 @@ function view(
 		out
 	end
 
-	add_plotly_listener!(p, "plotly_click", htl_js("async (e) => {
-		console.log('click')
-	}"))
+	add_plotly_listener!(p, "plotly_click", """e => {
+		let point_x = e.points[0].x
+		let point_y = e.points[0].y
+		Plotly.restyle(PLOT, {x: [[point_x]], y: [[point_y]]}, 1)
+
+		let span = PLOT.closest("span")
+		span.value = [point_x, point_y]
+		span.dispatchEvent(new CustomEvent("input"))
+	}""")
 
 	orbit_fixed(d) = let
 		v = orbit(f, complex(d["x"], d["y"]), c, is_mandel ? 1 : 1)
@@ -237,18 +248,30 @@ function view(
 	end
 
 	return @htl("""
-	$p
-	<script>
-		const plt = currentScript.closest('pluto-cell').querySelector('.js-plotly-plot')
-		plt.updated_data = $(AbstractPlutoDingetjes.Display.with_js_link(new_grid))
-		plt.orbit = $(AbstractPlutoDingetjes.Display.with_js_link(orbit_fixed))
-	</script>
+	<span>
+		$p
+		<script>
+			const plt = currentScript.closest('pluto-cell').querySelector('.js-plotly-plot')
+			plt.updated_data = $(AbstractPlutoDingetjes.Display.with_js_link(new_grid))
+			plt.orbit = $(AbstractPlutoDingetjes.Display.with_js_link(orbit_fixed))
+
+			const span = currentScript.parentElement
+			span.value = [0, 0]
+			span.dispatchEvent(new CustomEvent("input"))
+		</script>
+	</span>
 	""")
 end
 
-julia(f; center=0.0im, diam=4.0, c=0.0im, coloring_alg=:escape_time) = view(
-	f, convert(ComplexF64, center), convert(Float64, diam), convert(ComplexF64, c), false, coloring_alg
-)
+function julia(f; center=0.0im, diam=4.0, c=0.0im, coloring_alg=:escape_time)
+	if c === missing
+		c = 0.0im
+	end
+
+	return view(
+		f, convert(ComplexF64, center), convert(Float64, diam), convert(ComplexF64, complex(c...)), false, coloring_alg
+	)
+end
 
 mandel(f; center=0.0im, diam=4.0, c=0.0im, coloring_alg=:escape_time) = view(
 	f, convert(ComplexF64, center), convert(Float64, diam), convert(ComplexF64, c), true, coloring_alg
