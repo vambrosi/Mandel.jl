@@ -21,7 +21,7 @@ begin
 	Pkg.instantiate()
 	
 	include("./src/Mandel.jl")
-	using .Mandel, PlutoUI
+	using PlutoUI, .Mandel
 
 	mandel = Mandel.mandel
 	julia = Mandel.julia
@@ -48,14 +48,10 @@ Then, call `julia(f)` or `mandel(f)` to plot the respective sets.
 """
 
 # ╔═╡ 26ed5acd-6513-4406-ad6b-e4dda954fb0c
-julia(f; c=-0.11446945971361885 + 0.7428114463258763im)
+julia(f; c=-0.1145 + 0.7428im)
 
 # ╔═╡ fe15ced3-6678-46d5-9b8f-7496e1707a3a
-julia(
-	f;
-	c=-0.11446945971361885 + 0.7428114463258763im,
-	coloring_alg=:projective_convergence
-)
+julia(f; c=-0.1145 + 0.7428im, coloring_alg=:projective_convergence)
 
 # ╔═╡ 13d8745b-fb7d-481f-8f5d-67b72c806da2
 md"""

@@ -2,7 +2,8 @@ module Mandel
 
 export mandel, julia
 
-using StaticArraysCore, LinearAlgebra, Symbolics, PlutoPlotly, HypertextLiteral, AbstractPlutoDingetjes, PlutoUI
+using StaticArraysCore, LinearAlgebra, Symbolics, PlutoPlotly, HypertextLiteral, AbstractPlutoDingetjes
+using PrecompileTools
 
 # --------------------------------------------------------------------------- #
 # Complex Projective Line
@@ -23,7 +24,7 @@ function projectivize(f::Function)
 	fv = eval(build_function(d, u, v, c, expression=Val{false}))
 
 	return (pt, param) ->
-		normalize(Point(fu(pt[1], pt[2], param), fv(pt[1], pt[2], param)))
+		normalize!(Point(fu(pt[1], pt[2], param), fv(pt[1], pt[2], param)))
 end
 
 # --------------------------------------------------------------------------- #
@@ -293,9 +294,14 @@ end
 # --------------------------------------------------------------------------- #
 # Precompiling
 # --------------------------------------------------------------------------- #
-precompile(distance, (Point, Point))
-precompile(escape_time, (Function, ComplexF64, ComplexF64))
-precompile(projective_convergence, (Function, ComplexF64, ComplexF64))
-precompile(view, (Function, ComplexF64, Float64, ComplexF64, Bool, Symbol))
+@compile_workload begin
+	f(z, c) = z^2 + c
+	f_proj(pt, c) = normalize!(Point(pt[1]^2 + c * pt[2]^2, pt[2]^2))
+
+	grid(f, 0.0im, range(-2.5, 1.5, 10), range(-2.0, 2.0, 10), true, escape_time)
+	grid(f, -0.1145 + 0.7428im, range(-2.0, 2.0, 10), range(-2.0, 2.0, 10), false, escape_time)
+	grid(f_proj, 0.0im, range(-2.5, 1.5, 10), range(-2.0, 2.0, 10), true, projective_convergence)
+	grid(f_proj, -0.1145 + 0.7428im, range(-2.0, 2.0, 10), range(-2.0, 2.0, 10), false, projective_convergence)
+end
 
 end
