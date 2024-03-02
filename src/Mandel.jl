@@ -210,6 +210,7 @@ function view(
 		config = PlotConfig(
 			responsive=false,
 			modeBarButtonsToRemove=["autoscale", "select2d", "lasso2d"],
+			displaylogo=false,
 		),
 	)
 
