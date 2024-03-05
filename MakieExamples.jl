@@ -15,7 +15,6 @@ begin
 	# Includes the file with definitions and imports the relevant modules
 	include("./src/MandelMakie.jl")
 	using .MandelMakie
-	using Symbolics
 
 	# The next lines are necessary because Pluto does not expose the exported variables of a local package. You can skip those lines if you are loading this package into the REPL or Jupyter notebook. 
 	Viewer = MandelMakie.Viewer
