@@ -49,10 +49,13 @@ Currently, `Viewer3D` only shows the julia set, thus you have to supply the para
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
+# ╠═╡ disabled = true
+#=╠═╡
 Viewer(f, mandel_center=-0.5)
+  ╠═╡ =#
 
 # ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
-Viewer3D(f, -0.12711+0.75706im)
+viewer = Viewer3D(f)
 
 # ╔═╡ dc85ce65-38a8-4990-86f5-ed6894b96695
 md"""

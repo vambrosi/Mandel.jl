@@ -1,6 +1,6 @@
 module MandelMakie
 
-export DynamicalSystem, Viewer, Viewer3D, new_window, Point
+export Viewer, Viewer3D
 
 using GLMakie, Symbolics, Parameters
 
@@ -39,21 +39,43 @@ struct DynamicalSystem
 	end
 end
 
-function to_point_map(f)
-	@variables u, v, c
-	frac = simplify(f(u / v, c))
+function to_point_family(f)
+	@variables u, v, c, d
+	frac = simplify(f(u / v, c / d))
 	value = Symbolics.value(frac)
 
-	n, d = Symbolics.arguments(value)
-	fu = build_function(n, u, v, c, expression=Val{false})
-	fv = build_function(d, u, v, c, expression=Val{false})
+	num, den = Symbolics.arguments(value)
+	fu = build_function(num, u, v, c, d, expression=Val{false})
+	fv = build_function(den, u, v, c, d, expression=Val{false})
 
-	return (pt, param) -> Point(fu(pt.u, pt.v, param), fv(pt.u, pt.v, param))
+	return (pt_z, pt_c) -> Point(fu(pt_z.u, pt_z.v, pt_c.u, pt_c.v), fv(pt_z.u, pt_z.v, pt_c.u, pt_c.v))
+end
+
+function to_point_map(f)
+	@variables c, d
+	frac = simplify(f(c / d))
+	value = Symbolics.value(frac)
+
+	num, den = Symbolics.arguments(value)
+	fu = build_function(num, c, d, expression=Val{false})
+	fv = build_function(den, c, d, expression=Val{false})
+
+	return (pt) -> Point(fu(pt.u, pt.v), fv(pt.u, pt.v))
 end
 
 struct RationalMap
 	f::Function
-	RationalMap(f) = new(to_point_map(f))
+	crit::Function
+
+	function RationalMap(f, crit)
+		if crit isa Function
+            crit_function = to_point_map(crit)
+        else
+            crit_function = (_) -> Point(crit, 1.0)
+        end
+
+		return new(to_point_family(f), crit_function)
+	end
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -688,14 +710,26 @@ mutable struct Viewer3DOptions
 	max_iter::Int
 end
 
+abstract type View3D end
+
+mutable struct MandelView3D <: View3D
+	axis::LScene
+	grid::Matrix{Point}
+
+	texture::Observable{Matrix{Float64}}
+	camera::Camera3D
+
+	crit::Function
+	focus::Observable{Point}
+end
+
 function initialize!(
-	texture::Observable{Matrix{Float64}},
-	grid::Matrix{Point},
+	view::MandelView3D,
 	f::Function,
-	parameter::Number,
+	crit::Function,
 	options::Viewer3DOptions,
 )
-	w, h = size(grid)
+	w, h = size(view.grid)
 	δ = pi / (w - 1)
 
 	Threads.@threads for i in 0:(w - 1)
@@ -704,12 +738,12 @@ function initialize!(
 			θ = j * δ
 
 			pt = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
-			grid[i + 1, j + 1] = pt
+			view.grid[i + 1, j + 1] = pt
 
-			texture[][i + 1, j + 1] = multiplier(
+			view.texture[][i + 1, j + 1] = multiplier(
 				f,
+				crit(pt),
 				pt,
-				parameter,
 				options.ε,
 				options.max_iter,
 			)
@@ -719,103 +753,193 @@ function initialize!(
 	return
 end
 
-function update!(
-	texture::Observable{Matrix{Float64}},
-	grid::Matrix{Point},
-	f::Function,
-	parameter::Number,
-	options::Viewer3DOptions,
-	u0::Number,
-	v0::Number,
-	r::Number,
-)
+function plot_setup!(view::View3D)
+	mesh!(
+		Sphere(Point3f(0), 1.0),
+		color = view.texture,
+		colormap=:twilight,
+		colorrange = (0.0, 1.0),
+		shading = FastShading,
+	)
 
-	Threads.@threads for i in eachindex(grid)
-		grid[i] = Point(
-			r * v0 * grid[i].u + (1 - r) * u0 * grid[i].v,
-			v0 * grid[i].v
-		)
-
-		divide!(grid[i], sqrt(norm2(grid[i])))
-
-		texture[][i] = multiplier(
-			f,
-			grid[i],
-			parameter,
-			options.ε,
-			options.max_iter,
-		)
+	focus = lift(view.camera.eyeposition) do eye
+		x, y, z = eye
+		return eye / sqrt(x^2 + y^2 + z^2)
 	end
 
-	notify(texture)
-	return
+	complex_focus = let
+		x, y, z = convert(Vector{Float64}, focus[])
+		u0 = complex(x, y)
+		v0 = 1 - z
+		Observable(Point(u0, v0))
+	end
+
+	on(focus) do f
+		event = events(view.axis.scene).mousebutton[]
+		if event.button == Mouse.left
+			if event.action == Mouse.release
+				x, y, z = convert(Vector{Float64}, f)
+				u0 = complex(x, y)
+				v0 = 1 - z
+
+				complex_focus[] = Point(u0, v0)
+			end
+		end
+	end
+
+	scatter!(view.axis, focus, color = :red)
+
+	return complex_focus
 end
+
+function MandelView3D(w::Int, figure::Figure, f::Function, crit::Function, options::Viewer3DOptions)
+	h = 2 * w - 1
+
+	axis = LScene(figure[1, 1], show_axis = false)
+	grid = Matrix{Point}(undef, w, h)
+	texture = Observable(Array{Float64}(undef, w, h))
+	camera = Camera3D(axis.scene, eyeposition = Vec3f(0, 0, -1), upvector = Vec3f(0, -1, 0))
+	zoom!(axis.scene, 2)
+
+	mandel = MandelView3D(axis, grid, texture, camera, crit, Observable(Point(0, 1)))
+	initialize!(mandel, f, crit, options)
+	mandel.focus = plot_setup!(mandel)
+
+	return mandel
+end
+
+struct JuliaView3D <: View3D
+	axis::LScene
+	grid::Matrix{Point}
+
+	texture::Observable{Matrix{Float64}}
+	camera::Camera3D
+
+	parameter::Observable{Point}
+end
+
+function initialize!(
+	view::JuliaView3D,
+	f::Function,
+	c::Observable{Point},
+	options::Viewer3DOptions,
+)
+	w, h = size(view.grid)
+	δ = pi / (w - 1)
+
+	on(c) do c
+		Threads.@threads for i in 0:(w - 1)
+			Threads.@threads for j in 0:(h - 1)
+				φ = i * δ
+				θ = j * δ
+
+				pt = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
+				view.grid[i + 1, j + 1] = pt
+
+				view.texture[][i + 1, j + 1] = multiplier(
+					f,
+					pt,
+					c,
+					options.ε,
+					options.max_iter,
+				)
+			end
+		end
+
+		notify(view.texture)
+	end
+
+	return nothing
+end
+
+function JuliaView3D(w::Int, figure::Figure, f::Function, c::Observable{Point}, options::Viewer3DOptions)
+	h = 2 * w - 1
+
+	axis = LScene(figure[1, 2], show_axis = false)
+	grid = Matrix{Point}(undef, w, h)
+	texture = Observable(Array{Float64}(undef, w, h))
+	camera = Camera3D(axis.scene, eyeposition = Vec3f(0, 0, -1), upvector = Vec3f(0, -1, 0))
+	translate_cam!(axis.scene, Vec3f(0, 0, 0.5))
+
+	julia = JuliaView3D(axis, grid, texture, camera, c)
+	initialize!(julia, f, c, options)
+	plot_setup!(julia)
+
+	return julia
+end
+
+# function update!(
+# 	texture::Observable{Matrix{Float64}},
+# 	grid::Matrix{Point},
+# 	f::Function,
+# 	parameter::Number,
+# 	options::Viewer3DOptions,
+# 	u0::Number,
+# 	v0::Number,
+# 	r::Number,
+# )
+
+# 	Threads.@threads for i in eachindex(grid)
+# 		grid[i] = Point(
+# 			r * v0 * grid[i].u + (1 - r) * u0 * grid[i].v,
+# 			v0 * grid[i].v
+# 		)
+
+# 		divide!(grid[i], sqrt(norm2(grid[i])))
+
+# 		texture[][i] = multiplier(
+# 			f,
+# 			grid[i],
+# 			parameter,
+# 			options.ε,
+# 			options.max_iter,
+# 		)
+# 	end
+
+# 	notify(texture)
+# 	return
+# end
 
 struct Viewer3D
 	rational_map::RationalMap
-	parameter::ComplexF64
-
 	figure::Figure
-	axis::LScene
-
-	grid::Matrix{Point}
-	texture::Observable{Matrix{Float64}}
 	options::Viewer3DOptions
-	camera::Camera3D
+
+	mandel::MandelView3D
+	julia::JuliaView3D
 end
 
-function Viewer3D(f::Function, parameter::Union{Number, Function})
-    rational_map = RationalMap(f)
+function Viewer3D(f::Function; crit=0.0im, c=0.0im)
+    rational_map = RationalMap(f, crit)
     options = Viewer3DOptions(1e-4, 200)
-    figure = Figure(size = (800, 800))
-    axis = LScene(figure[1, 1], show_axis = false)
-    cam = Camera3D(axis.scene)
+    figure = Figure(size = (1000, 500))
 
-    w = 1001
-    h = 2 * w - 1
+	# Initialize Mandel and Julia Views
+	w = 501
+    mandel = MandelView3D(w, figure, rational_map.f, rational_map.crit, options)
+	julia = JuliaView3D(w, figure, rational_map.f, mandel.focus, options)
 
-    grid = Array{Point}(undef, w, h)
-    texture = Observable(Array{Float64}(undef, w, h))
+	rowsize!(figure.layout, 1, Aspect(1, 1))
+	colgap!(figure.layout, 0)
 
-    initialize!(texture, grid, rational_map.f, parameter, options)
+    # zoom_in = Button(figure[2,1][1,1], label="Zoom In")
+    # zoom_out = Button(figure[2,1][1,2], label="Zoom Out")
 
-    plt = mesh!(
-        Sphere(Point3f(0), 1.0),
-        color = texture,
-        colormap=:twilight,
-        colorrange = (0.0, 1.0),
-        shading = FastShading,
-        eyeposition = Vec3f(0, 0, -2),
-    )
+    # on(zoom_in.clicks) do event
+    #     x, y, z = convert(Vector{Float64}, focus[])
+    #     u0 = complex(x, y)
+    #     v0 = 1 - z
+    #     update!(texture, grid, rational_map.f, parameter, options, u0, v0, 0.5)
+    # end
 
-    focus = lift(cam.eyeposition) do eye
-        x, y, z = eye
-        return eye / sqrt(x^2 + y^2 + z^2)
-    end
+    # on(zoom_out.clicks) do event
+    #     x, y, z = convert(Vector{Float64}, focus[])
+    #     u0 = complex(x, y)
+    #     v0 = 1 - z
+    #     update!(texture, grid, rational_map.f, parameter, options, u0, v0, 2.0)
+    # end
 
-    scatter!(axis, focus, color = :red)
-
-    colsize!(figure.layout, 1, Relative(0.95))
-    rowsize!(figure.layout, 1, Aspect(1, 1))
-
-    zoom_in = Button(figure[2,1][1,1], label="Zoom In")
-    zoom_out = Button(figure[2,1][1,2], label="Zoom Out")
-
-    on(zoom_in.clicks) do event
-        x, y, z = convert(Vector{Float64}, focus[])
-        u0 = complex(x, y)
-        v0 = 1 - z
-        update!(texture, grid, rational_map.f, parameter, options, u0, v0, 0.5)
-    end
-
-    on(zoom_out.clicks) do event
-        x, y, z = convert(Vector{Float64}, focus[])
-        u0 = complex(x, y)
-        v0 = 1 - z
-        update!(texture, grid, rational_map.f, parameter, options, u0, v0, 2.0)
-    end
-
-    return Viewer3D(rational_map, parameter, figure, axis, grid, texture, options, cam)
+    return Viewer3D(rational_map, figure, options, mandel, julia)
 end
 
 Base.show(io::IO, viewer::Viewer3D) = display(GLMakie.Screen(), viewer.figure)

@@ -160,7 +160,7 @@ end
 function multiplier(
 	f::Function,
 	pt::Point,
-	c::Number,
+	c::Point,
 	ε::Real,
 	max_iter::Integer
 )
