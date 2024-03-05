@@ -1,4 +1,4 @@
-module Mandel
+module MandelPluto
 
 export mandel, julia
 

@@ -19,12 +19,12 @@ begin
 	using Pkg
 	Pkg.activate(@__DIR__)
 	Pkg.instantiate()
-	
-	include("./src/Mandel.jl")
-	using PlutoUI, .Mandel
 
-	mandel = Mandel.mandel
-	julia = Mandel.julia
+	include("./src/MandelPluto.jl")
+	using PlutoUI, .MandelPluto
+
+	mandel = MandelPluto.mandel
+	julia = MandelPluto.julia
 end
 
 # ╔═╡ fe433fb7-db21-4f24-b786-246dbd6ad280
@@ -55,10 +55,10 @@ julia(f; c=-0.1145 + 0.7428im, coloring_alg=:projective_convergence)
 
 # ╔═╡ 13d8745b-fb7d-481f-8f5d-67b72c806da2
 md"""
-You can choose the initial center, initial diameter, and the parameter of the Julia set by choosing `center`, `diam`, and `c`. 
+You can choose the initial center, initial diameter, and the parameter of the Julia set by choosing `center`, `diam`, and `c`.
 
 The variable `coloring_alg` chooses the coloring algorithm for the plot. The options are:
-- `:escape_time` 
+- `:escape_time`
 - `:projective_convergence`.
 """
 
