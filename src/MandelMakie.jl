@@ -943,7 +943,7 @@ end
 function Viewer3D(f::Function; crit=0.0im, c=0.0im)
     rational_map = RationalMap(f, crit)
     options = Viewer3DOptions(1e-4, 200)
-    figure = Figure(size = (1000, 500))
+    figure = Figure(size = (1020, 500))
 
 	# Initialize Mandel and Julia Views
 	w = 501
@@ -951,7 +951,7 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im)
 	julia = JuliaView3D(w, figure, rational_map.f, mandel.focus, options)
 
 	rowsize!(figure.layout, 1, Aspect(1, 1))
-	colgap!(figure.layout, 0)
+	colgap!(figure.layout, 5)
 
     # zoom_in = Button(figure[2,1][1,1], label="Zoom In")
     # zoom_out = Button(figure[2,1][1,2], label="Zoom Out")

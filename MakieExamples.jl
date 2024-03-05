@@ -48,7 +48,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 Viewer(f, mandel_center=-0.5)
 
 # ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
-viewer = Viewer3D(f)
+Viewer3D(f)
 
 # ╔═╡ dc85ce65-38a8-4990-86f5-ed6894b96695
 md"""
