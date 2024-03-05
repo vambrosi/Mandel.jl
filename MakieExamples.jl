@@ -33,7 +33,7 @@ If you prefer, you can add that cell to your own Pluto notebook (or make a copy 
 
 # ╔═╡ fb6c0e42-b256-47aa-a496-aa5e3e4a57cc
 md"""
-First, you define a complex map (don't put type annotations)
+First, you define a family of complex maps (don't put type annotations)
 """
 
 # ╔═╡ f49a6cef-86c9-4a47-a9ff-30588b3de27c
@@ -41,18 +41,11 @@ f(z, c) = z^2 + c
 
 # ╔═╡ 6b1c8547-06de-4bb7-9062-0826ad04b92e
 md"""
-Then, call `Viewer` or `Viewer3D` to show the GUI in another window. 
-
-(`Viewer3D` should only be used with rational functions.)
-
-Currently, `Viewer3D` only shows the julia set, thus you have to supply the parameter.
+Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot and Julia sets associated with that family of functions. (`Viewer3D` should only be used with rational functions.)
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-# ╠═╡ disabled = true
-#=╠═╡
 Viewer(f, mandel_center=-0.5)
-  ╠═╡ =#
 
 # ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
 viewer = Viewer3D(f)

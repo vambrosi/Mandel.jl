@@ -282,6 +282,16 @@ function corner_and_step(view::View)
 	return corner, step
 end
 
+function mandel_slice!(array, j, f, df_dz, crit, corner, step, pxs, options)
+	@inbounds for i in 1:pxs
+		c = corner + step * complex(i, j)
+		array[i, j] = options.coloring_algorithm(
+			f, df_dz, crit(c), c, options.esc_radius, options.max_iter
+		)
+	end
+	return nothing
+end
+
 function update_grid!(
 	view::MandelView,
 	f::Function,
@@ -291,19 +301,26 @@ function update_grid!(
 	step::Float64,
 	options::ViewerOptions,
 )
-	Threads.@threads for j in 1:view.pixels
-		Threads.@threads for i in 1:view.pixels
-			c = corner + step * complex(i, j)
-			view.array[][i, j] = options.coloring_algorithm(
-				f,
-				df_dz,
-				crit(c),
-				c,
-				options.esc_radius,
-				options.max_iter,
-			)
-		end
+	futures = Vector{Task}(undef, view.pixels)
+
+	@inbounds for j in 1:view.pixels
+		futures[j] = Threads.@spawn mandel_slice!(
+			view.array[], j, f, df_dz, crit, corner, step, view.pixels, options
+		)
 	end
+
+	wait.(futures)
+	return nothing
+end
+
+function julia_slice!(array, j, f, df_dz, c, corner, step, pxs, options)
+	@inbounds for i in 1:pxs
+		z = corner + step * complex(i, j)
+		array[i, j] = options.coloring_algorithm(
+			f, df_dz, z, c,	options.esc_radius,	options.max_iter,
+		)
+	end
+	return nothing
 end
 
 function update_grid!(
@@ -315,19 +332,16 @@ function update_grid!(
 	step::Float64,
 	options::ViewerOptions,
 )
-	Threads.@threads for j in 1:view.pixels
-		Threads.@threads for i in 1:view.pixels
-			z = corner + step * complex(i, j)
-			view.array[][i, j] = options.coloring_algorithm(
-				f,
-				df_dz,
-				z,
-				view.parameter,
-				options.esc_radius,
-				options.max_iter,
-			)
-		end
+	futures = Vector{Task}(undef, view.pixels)
+
+	@inbounds for j in 1:view.pixels
+		futures[j] = Threads.@spawn julia_slice!(
+			view.array[], j, f, df_dz, view.parameter, corner, step, view.pixels, options
+		)
 	end
+
+	wait.(futures)
+	return nothing
 end
 
 function update!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
@@ -723,6 +737,25 @@ mutable struct MandelView3D <: View3D
 	focus::Observable{Point}
 end
 
+function mandel_slice3D!(grid, texture, w, j, δ, f, crit, options)
+	@inbounds for i in 0:(w-1)
+		φ = i * δ
+		θ = j * δ
+
+		pt = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
+		grid[i + 1, j + 1] = pt
+
+		texture[i + 1, j + 1] = multiplier(
+			f,
+			crit(pt),
+			pt,
+			options.ε,
+			options.max_iter,
+		)
+	end
+	return nothing
+end
+
 function initialize!(
 	view::MandelView3D,
 	f::Function,
@@ -732,25 +765,17 @@ function initialize!(
 	w, h = size(view.grid)
 	δ = pi / (w - 1)
 
-	Threads.@threads for i in 0:(w - 1)
-		Threads.@threads for j in 0:(h - 1)
-			φ = i * δ
-			θ = j * δ
+	futures = Vector{Task}(undef, h)
 
-			pt = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
-			view.grid[i + 1, j + 1] = pt
-
-			view.texture[][i + 1, j + 1] = multiplier(
-				f,
-				crit(pt),
-				pt,
-				options.ε,
-				options.max_iter,
-			)
-		end
+	@inbounds for j in 0:(h-1)
+		futures[j+1] = Threads.@spawn mandel_slice3D!(
+			view.grid, view.texture[], w, j, δ, f, crit, options
+		)
 	end
 
-	return
+	wait.(futures)
+
+	return nothing
 end
 
 function plot_setup!(view::View3D)
@@ -818,37 +843,43 @@ struct JuliaView3D <: View3D
 	parameter::Observable{Point}
 end
 
+function julia_slice3D!(grid, texture, w, j, δ, f, c, options)
+	@inbounds for i in 0:(w-1)
+		φ = i * δ
+		θ = j * δ
+
+		pt = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
+		grid[i + 1, j + 1] = pt
+
+		texture[i + 1, j + 1] = multiplier(
+			f, pt, c, options.ε, options.max_iter,
+		)
+	end
+
+	return nothing
+end
+
 function initialize!(
 	view::JuliaView3D,
 	f::Function,
-	c::Observable{Point},
+	parameter::Observable{Point},
 	options::Viewer3DOptions,
 )
 	w, h = size(view.grid)
 	δ = pi / (w - 1)
 
-	on(c) do c
-		Threads.@threads for i in 0:(w - 1)
-			Threads.@threads for j in 0:(h - 1)
-				φ = i * δ
-				θ = j * δ
+	on(parameter) do c
+		futures = Vector{Task}(undef, h)
 
-				pt = Point(sin(φ) * exp(im * θ), 1 - cos(φ))
-				view.grid[i + 1, j + 1] = pt
-
-				view.texture[][i + 1, j + 1] = multiplier(
-					f,
-					pt,
-					c,
-					options.ε,
-					options.max_iter,
-				)
-			end
+		@inbounds for j in 0:(h-1)
+			futures[j+1] = Threads.@spawn julia_slice3D!(
+				view.grid, view.texture[], w, j, δ, f, c, options
+			)
 		end
 
+		wait.(futures)
 		notify(view.texture)
 	end
-
 	return nothing
 end
 
