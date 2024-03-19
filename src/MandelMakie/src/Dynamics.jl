@@ -1,3 +1,5 @@
+using StaticArraysCore, LinearAlgebra
+
 const DEFAULT_VALUE = 0.5
 
 # --------------------------------------------------------------------------------------- #
@@ -133,28 +135,10 @@ end
 # Coloring Algorithms for the Complex Projective Line
 # --------------------------------------------------------------------------------------- #
 
-mutable struct Point
-    u::ComplexF64
-    v::ComplexF64
-end
+const Point = MVector{2, ComplexF64}
 
-function divide!(point::Point, λ::Real)
-	point.u /= λ
-	point.v /= λ
-	return point
-end
-
-norm2(pt::Point) = abs2(pt.u) + abs2(pt.v)
-
-function d_sqr!(pt1::Point, pt2::Point)
-    numerator = abs2(pt1.u * pt2.v - pt1.v * pt2.u)
-    norm2_1 = norm2(pt1)
-    norm2_2 = norm2(pt2)
-
-    divide!(pt1, sqrt(norm2_1))
-	divide!(pt2, sqrt(norm2_2))
-
-    return numerator / (norm2_1 * norm2_2)
+function distance(pt1::Point, pt2::Point)
+	return norm(pt1[1] * pt2[2] - pt1[2] * pt2[1])
 end
 
 function multiplier(
@@ -165,7 +149,6 @@ function multiplier(
 	max_iter::Integer
 )
     tortoise = hare = pt
-    ε_sqr = ε^2
 
 	iter = 1
 	period_multiple = 1
@@ -173,7 +156,7 @@ function multiplier(
 		tortoise = f(tortoise, c)
 		hare = f(f(hare, c), c)
 
-		if d_sqr!(hare, tortoise) <= ε_sqr
+		if distance(hare, tortoise) <= ε
 			period_multiple = iter
 			break
 		end
@@ -192,7 +175,7 @@ function multiplier(
 		tortoise = f(tortoise, c)
 		# μ *= df(tortoise, c)
 
-		if d_sqr!(hare, tortoise) <= ε_sqr
+		if distance(hare, tortoise) <= ε
 			period = iter
 			break
 		end
@@ -208,7 +191,7 @@ function multiplier(
 	iter = 0
 	preperiod = 0
 	while iter <= max_iter
-		if d_sqr!(hare, tortoise) <= ε_sqr
+		if distance(hare, tortoise) <= ε
 			preperiod = iter
 			break
 		end
@@ -221,8 +204,6 @@ function multiplier(
 	if iter == max_iter + 1
 		return 0.5
 	end
-
-	ε = d_sqr!(hare, tortoise)
 
 	return mod((preperiod / period) / 64.0, 1.0)
 end
