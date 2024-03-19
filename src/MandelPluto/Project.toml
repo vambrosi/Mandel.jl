@@ -1,8 +1,11 @@
+name = "MandelPluto"
+uuid = "f141eede-be22-46b5-8c22-166a8d4ceef3"
+authors = ["vambrosi <vambrosi@indiana.edu>"]
+version = "0.1.0"
+
 [deps]
 AbstractPlutoDingetjes = "6e696c72-6542-2067-7265-42206c756150"
-GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 HypertextLiteral = "ac1192a8-f4b3-4bfe-ba22-af5b92cd3ab2"
-Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 Pluto = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
 PlutoPlotly = "8e989ff0-3d88-8e9f-f020-2b208a939ff0"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
