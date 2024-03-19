@@ -735,6 +735,7 @@ mutable struct MandelView3D <: View3D
 
 	crit::Function
 	focus::Observable{Point}
+	point::Observable{Point}
 end
 
 function mandel_slice3D!(grid, texture, w, j, δ, f, crit, options)
@@ -799,6 +800,13 @@ function plot_setup!(view::View3D)
 		Observable(Point(u0, v0))
 	end
 
+	point = lift(view.point) do point
+		x = real(point.u)
+		y = imag(point.u)
+		z = 1 - real(point.v)
+		return Vec3f(x,y,z)
+	end
+
 	on(focus) do f
 		event = events(view.axis.scene).mousebutton[]
 		if event.button == Mouse.left
@@ -813,6 +821,7 @@ function plot_setup!(view::View3D)
 	end
 
 	scatter!(view.axis, focus, color = :red)
+	scatter!(view.axis, point, color = :blue)
 
 	return complex_focus
 end
@@ -823,17 +832,17 @@ function MandelView3D(w::Int, figure::Figure, f::Function, crit::Function, optio
 	axis = LScene(figure[1, 1], show_axis = false)
 	grid = Matrix{Point}(undef, w, h)
 	texture = Observable(Array{Float64}(undef, w, h))
-	camera = Camera3D(axis.scene, eyeposition = Vec3f(0, 0, -1), upvector = Vec3f(0, -1, 0))
-	zoom!(axis.scene, 2)
+	camera = Camera3D(axis.scene, eyeposition = Vec3f(0, 0, -3), upvector = Vec3f(0, -1, 0), fixed_axis = false, center = false)
 
-	mandel = MandelView3D(axis, grid, texture, camera, crit, Observable(Point(0, 1)))
+	mandel = MandelView3D(axis, grid, texture, camera, crit, Observable(Point(0, 1)), Observable(Point(0, 1)))
 	initialize!(mandel, f, crit, options)
 	mandel.focus = plot_setup!(mandel)
+	mandel.point[] = mandel.focus[]
 
 	return mandel
 end
 
-struct JuliaView3D <: View3D
+mutable struct JuliaView3D <: View3D
 	axis::LScene
 	grid::Matrix{Point}
 
@@ -841,6 +850,8 @@ struct JuliaView3D <: View3D
 	camera::Camera3D
 
 	parameter::Observable{Point}
+	focus::Observable{Point}
+	point::Observable{Point}
 end
 
 function julia_slice3D!(grid, texture, w, j, δ, f, c, options)
@@ -889,12 +900,11 @@ function JuliaView3D(w::Int, figure::Figure, f::Function, c::Observable{Point}, 
 	axis = LScene(figure[1, 2], show_axis = false)
 	grid = Matrix{Point}(undef, w, h)
 	texture = Observable(Array{Float64}(undef, w, h))
-	camera = Camera3D(axis.scene, eyeposition = Vec3f(0, 0, -1), upvector = Vec3f(0, -1, 0))
-	translate_cam!(axis.scene, Vec3f(0, 0, 0.5))
+	camera = Camera3D(axis.scene, eyeposition = Vec3f(0, 0, -3), upvector = Vec3f(0, -1, 0), fixed_axis = false, center = false)
 
-	julia = JuliaView3D(axis, grid, texture, camera, c)
+	julia = JuliaView3D(axis, grid, texture, camera, c, Observable(Point(0, 1)), Observable(Point(0, 1)))
 	initialize!(julia, f, c, options)
-	plot_setup!(julia)
+	julia.focus = plot_setup!(julia)
 
 	return julia
 end
@@ -943,15 +953,31 @@ end
 function Viewer3D(f::Function; crit=0.0im, c=0.0im)
     rational_map = RationalMap(f, crit)
     options = Viewer3DOptions(1e-4, 200)
-    figure = Figure(size = (1020, 500))
+    figure = Figure(size = (1000, 560))
 
 	# Initialize Mandel and Julia Views
 	w = 501
     mandel = MandelView3D(w, figure, rational_map.f, rational_map.crit, options)
-	julia = JuliaView3D(w, figure, rational_map.f, mandel.focus, options)
+	julia = JuliaView3D(w, figure, rational_map.f, mandel.point, options)
+	notify(mandel.point)
 
 	rowsize!(figure.layout, 1, Aspect(1, 1))
 	colgap!(figure.layout, 5)
+
+	menu_mandel = GridLayout(
+		figure[2,1],
+		width=Relative(0.95),
+		valign=0.97,
+		tellheight = false,
+		tellwidth = false,
+		default_colgap = 8,
+	)
+
+	point_button = Button(menu_mandel[1,1], label="Pick Parameter")
+
+	on(point_button.clicks) do event
+		mandel.point[] = mandel.focus[]
+	end
 
     # zoom_in = Button(figure[2,1][1,1], label="Zoom In")
     # zoom_out = Button(figure[2,1][1,2], label="Zoom Out")
