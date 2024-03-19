@@ -137,6 +137,20 @@ end
 
 const Point = MVector{2, ComplexF64}
 
+const Mobius = SMatrix{2, 2, ComplexF64}
+
+function antipodal_hyperbolic(fixed_point, scale_factor)
+    u = fixed_point[1]
+    v = fixed_point[2]
+
+    return Mobius(
+        abs2(u) + scale_factor * abs2(v),
+        (1 - scale_factor) * u * conj(v),
+        (1 - scale_factor) * conj(u) * v,
+        scale_factor * abs2(u) + abs2(v)
+    )
+end
+
 function distance(pt1::Point, pt2::Point)
 	return norm(pt1[1] * pt2[2] - pt1[2] * pt2[1])
 end

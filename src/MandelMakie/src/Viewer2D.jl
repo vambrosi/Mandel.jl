@@ -264,7 +264,7 @@ function update_grid!(
 	return nothing
 end
 
-function update!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
+function update_view!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
 	corner, step = corner_and_step(view)
 	update_grid!(
 		view,
@@ -289,7 +289,7 @@ function centering!(
 	point
 )
 	view.center = to_complex(view, point)
-	update!(view, d_system, options)
+	update_view!(view, d_system, options)
 	return view
 end
 
@@ -302,7 +302,7 @@ function zoom_in!(
 	z = to_complex(view, point)
 	view.center = 0.5 * view.center + 0.5 * z
 	view.diameter /= 2.0
-	update!(view, d_system, options)
+	update_view!(view, d_system, options)
 	return view
 end
 
@@ -315,7 +315,7 @@ function zoom_out!(
 	z = to_complex(view, point)
 	view.center = 2.0 * view.center - z
 	view.diameter *= 2.0
-	update!(view, d_system, options)
+	update_view!(view, d_system, options)
 	return view
 end
 
@@ -341,7 +341,7 @@ function pick_parameter!(
 
 	mandel.points[] = [julia.parameter]
 
-	update!(julia, d_system, options)
+	update_view!(julia, d_system, options)
 	pick_orbit!(julia, d_system, options, julia.points[][begin])
 	return julia
 end
@@ -373,7 +373,7 @@ function reset!(
 )
 	view.center = view.init_center
 	view.diameter = view.init_diameter
-	update!(view, d_system, options)
+	update_view!(view, d_system, options)
 	return view
 end
 
@@ -461,8 +461,8 @@ struct Viewer
 			julia.points[][begin],
 		)
 
-		update!(mandel, d_system, options)
-		update!(julia, d_system, options)
+		update_view!(mandel, d_system, options)
+		update_view!(julia, d_system, options)
 
 		colsize!(figure.layout, 1, Relative(0.97))
 		rowsize!(figure.layout, 1, Aspect(1, 0.5))
@@ -515,8 +515,8 @@ struct Viewer
 
 		on(input_fields[:max_iter].stored_string) do s
 		    options.max_iter = parse(Int, s)
-			update!(julia, d_system, options)
-			update!(mandel, d_system, options)
+			update_view!(julia, d_system, options)
+			update_view!(mandel, d_system, options)
 		end
 
 		on(input_fields[:orbit_len].stored_string) do s
@@ -541,8 +541,8 @@ struct Viewer
 
 		on(input_fields[:esc_radius].stored_string) do s
 		    options.esc_radius = parse(Float64, s)
-			update!(julia, d_system, options)
-			update!(mandel, d_system, options)
+			update_view!(julia, d_system, options)
+			update_view!(mandel, d_system, options)
 		end
 
 		button_non_active_color = buttons[:centering].buttoncolor[]
