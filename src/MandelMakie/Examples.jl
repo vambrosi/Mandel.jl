@@ -49,7 +49,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
 Viewer(f; crit=crit, mandel_diam=1.0)
 
-# ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
+# ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 Viewer3D(f; crit=crit)
 
 # ╔═╡ dc85ce65-38a8-4990-86f5-ed6894b96695
@@ -64,6 +64,6 @@ md"""
 # ╠═89426560-0874-45a2-a2dd-6b2a044faabb
 # ╟─6b1c8547-06de-4bb7-9062-0826ad04b92e
 # ╠═70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-# ╠═5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
+# ╠═048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╟─dc85ce65-38a8-4990-86f5-ed6894b96695
 # ╠═4a085b76-da75-11ee-2b50-07309082fb46

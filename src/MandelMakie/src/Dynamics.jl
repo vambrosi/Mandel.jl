@@ -140,13 +140,14 @@ const Point = MVector{2, ComplexF64}
 const Mobius = SMatrix{2, 2, ComplexF64}
 
 function antipodal_hyperbolic(fixed_point, scale_factor)
-    u = fixed_point[1]
-    v = fixed_point[2]
+    pt_normalized = normalize(fixed_point)
+    u = pt_normalized[1]
+    v = pt_normalized[2]
 
     return Mobius(
         abs2(u) + scale_factor * abs2(v),
-        (1 - scale_factor) * u * conj(v),
         (1 - scale_factor) * conj(u) * v,
+        (1 - scale_factor) * u * conj(v),
         scale_factor * abs2(u) + abs2(v)
     )
 end
