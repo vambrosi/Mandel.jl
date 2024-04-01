@@ -327,14 +327,10 @@ function pick_parameter!(
 	point,
 )
 	julia.parameter = to_complex(mandel, point)
-	julia.init_center = d_system.crit(julia.parameter)
-	if isapprox(julia.diameter, julia.init_diameter)
-		julia.center = julia.init_center
-	end
 
 	julia.marks[] = orbit(
 		d_system.f,
-		julia.init_center,
+		d_system.crit(julia.parameter),
 		julia.parameter,
 		options.crit_len - 1,
 	)
@@ -533,9 +529,9 @@ struct Viewer
 		    options.crit_len = parse(Int, s)
 			julia.marks[] = orbit(
 				d_system.f,
-				julia.init_center,
+				d_system.crit(julia.parameter),
 				julia.parameter,
-				options.orbit_len - 1,
+				options.crit_len - 1,
 			)
 		end
 
