@@ -238,7 +238,7 @@ function put_menu!(figure, view)
         notify(view.mark_point)
     end
 
-    return markbutton
+    return markbutton, menu
 end
 
 function Viewer3D(f::Function; crit=0.0im, c=0.0im)
@@ -254,11 +254,24 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im)
     rowsize!(figure.layout, 1, Aspect(1, 1))
     colgap!(figure.layout, 5)
 
-    markbutton = put_menu!(figure[2, 1], mandel)
-    put_menu!(figure[2, 2], julia)
+    markbutton, _ = put_menu!(figure[2, 1], mandel)
+    _, menu = put_menu!(figure[2, 2], julia)
 
     on(markbutton.clicks) do _
         notify(julia.points)
+    end
+
+    Label(menu[1, 5], "Orbit\nLength:")
+
+    orbit_length_input = Textbox(
+        menu[1, 6],
+        width = 50,
+        placeholder = string(julia.path_length[]),
+        validator = Int,
+    )
+
+    on(orbit_length_input.stored_string) do s
+        julia.path_length[] = parse(Int, s)
     end
 
     return Viewer3D(rational_map, figure, state, mandel, julia)
