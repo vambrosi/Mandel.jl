@@ -13,8 +13,14 @@ mutable struct View3D
     focus_vector::Observable{Vec3f}
     focus_point::Observable{Point}
 
-    mark_vector::Observable{Vec3f}
+    # mark_vector::Observable{Vec3f}
     mark_point::Observable{Point}
+
+    path_points::Observable{Vector{Point}}
+    path_vectors::Observable{Vector{Vec3f}}
+    path_length::Observable{Int}
+
+    trace::Observable{Vector{Vec3f}}
 end
 
 function reset_points!(points)
@@ -70,9 +76,9 @@ function indices_to_vector(indices, longitudes)
     φ = (indices[1] - 1) * δ
     θ = (indices[2] - 1) * δ
 
-    x = 1.001 * sin(φ) * cos(θ)
-    y = 1.001 * sin(φ) * sin(θ)
-    z = 1.001 * cos(φ)
+    x = sin(φ) * cos(θ)
+    y = sin(φ) * sin(θ)
+    z = cos(φ)
 
     return Vec3f(x, y, z)
 end
@@ -103,7 +109,7 @@ function closest_indices(point, points)
     return indices
 end
 
-function plot_setup!(scene, points, texture)
+function plot_setup!(scene, points, texture, is_mandel, f, c)
     mesh!(
         scene,
         Sphere(Point3f(0), 1.0),
@@ -122,20 +128,45 @@ function plot_setup!(scene, points, texture)
     )
 
     focus_vector = @lift(normalize($(camera.eyeposition)))
-
     focus_point = @lift(closest_point($focus_vector, $points))
 
     mark_point = Observable(Point(0, 1))
+    # mark_vector = @lift(indices_to_vector(closest_indices($mark_point, $points), size($points)[1]))
 
-    mark_vector = @lift(indices_to_vector(closest_indices($mark_point, $points), size($points)[1]))
+    path_length = is_mandel ? Observable(1) : Observable(10)
+    path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f, $mark_point, $c, $path_length))
+    path_vectors = @lift begin
+        vectors = Vector{Vec3f}(undef, $path_length)
+        for i in 1:$path_length
+            @inbounds vectors[i] = indices_to_vector(closest_indices($path_points[i], $points), size($points)[1])
+        end
+        return vectors
+    end
+
+    trace = @lift begin
+        segment_length = 20
+        trace = Vector{Vec3f}(undef, ($path_length - 1) * segment_length + 1)
+        for i in 2:$path_length
+            for j in 1:segment_length
+                t = (j-1) / segment_length
+                trace[j + (i-2)*segment_length] = 1.01 * normalize((1 - t) * $path_vectors[i-1] + t * $path_vectors[i])
+            end
+        end
+        trace[end] = $path_vectors[end]
+        return trace
+    end
 
     scatter!(scene, focus_vector, color=:red)
-    scatter!(scene, mark_vector, color=:blue)
+    scatter!(scene, path_vectors, color=:blue)
+    lines!(scene, trace, color=:blue)
 
-    return View3D(scene, camera, points, texture, focus_vector, focus_point, mark_vector, mark_point)
+    return View3D(
+        scene, camera, points, texture, focus_vector, focus_point,
+        mark_point, path_points, path_vectors, path_length, trace,
+    )
 end
 
-function init_view3D(longitudes, figure, f, c, state)
+function init_view3D(longitudes, figure, f, c, state, is_mandel)
     meridians = 2 * longitudes - 1
 
     scene = LScene(figure, show_axis=false)
@@ -147,7 +178,7 @@ function init_view3D(longitudes, figure, f, c, state)
     end
 
     reset_points!(points)
-    view = plot_setup!(scene, points, texture)
+    view = plot_setup!(scene, points, texture, is_mandel, f, c)
 
     return view
 end
@@ -217,8 +248,8 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im)
 
     # Initialize Mandel and Julia Views
     meridian = 501
-    mandel = init_view3D(meridian, figure[1, 1], rational_map.f, rational_map.crit, state)
-    julia = init_view3D(meridian, figure[1, 2], rational_map.f, mandel.mark_point, state)
+    mandel = init_view3D(meridian, figure[1, 1], rational_map.f, rational_map.crit, state, true)
+    julia = init_view3D(meridian, figure[1, 2], rational_map.f, mandel.mark_point, state, false)
 
     rowsize!(figure.layout, 1, Aspect(1, 1))
     colgap!(figure.layout, 5)

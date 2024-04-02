@@ -156,6 +156,17 @@ function distance(pt1::Point, pt2::Point)
 	return norm(pt1[1] * pt2[2] - pt1[2] * pt2[1])
 end
 
+function orbit(f::Function, pt::Point, c::Point, length::Int)
+    points = Vector{Point}(undef, length)
+    points[1] = pt
+
+    for i in 2:length
+        points[i] = f(points[i - 1], c)
+    end
+
+    return points
+end
+
 function multiplier(
 	f::Function,
 	pt::Point,
