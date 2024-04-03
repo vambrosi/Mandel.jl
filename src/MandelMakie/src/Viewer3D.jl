@@ -1,3 +1,5 @@
+using GeometryBasics: Tesselation, uv_normal_mesh
+
 mutable struct State
     ε::Float64
     max_iter::Int
@@ -19,8 +21,6 @@ mutable struct View3D
     path_points::Observable{Vector{Point}}
     path_vectors::Observable{Vector{Vec3f}}
     path_length::Observable{Int}
-
-    trace::Observable{Vector{Vec3f}}
 end
 
 function reset_points!(points)
@@ -109,16 +109,35 @@ function closest_indices(point, points)
     return indices
 end
 
-function arc(v_start, v_end, segments)
+function arc(v0, v1, segments)
+    v_start, v_end = normalize(v0), normalize(v1)
     arc_steps = Vector{Vec3f}(undef, segments)
     arc_steps[1] = v_start
 
-    # First vector after v_start (slerp formula)
-    ϕ = acos(clamp(v_start ⋅ v_end/(norm(v_start) * norm(v_end)), -1, 1))
-    t = 1 / segments
-    arc_steps[2] = 1 / sin(ϕ) * (sin((1 - t) * ϕ) * v_start + sin(t * ϕ) * v_end)
+    # In case vectors are antipodal, pick a random great circle.
+    if norm(v_start + v_end) < 0.01
+        # Pick random vector
+        u = v_start
+        while norm(u - v_start) < 0.01 || norm(u - v_end) < 0.01
+            u = rand(0.0:0.1:1.0, 3)
+        end
 
-    # Other vectors
+        # Make it orthonormal to v_start
+        u = normalize(u - (u ⋅ v_start) * v_start)
+
+        # Pick first vector to be 1 / segments away along the great circle
+        t = pi / segments
+        arc_steps[2] = cos(t) * v_start + sin(t) * u
+
+    # Otherwise pick the first point along the arc containing v_start and v_end
+    else
+        # First vector after v_start (slerp formula)
+        ϕ = acos(clamp(v_start ⋅ v_end/(norm(v_start) * norm(v_end)), -1, 1))
+        t = 1 / segments # how far to walk along the arc
+        arc_steps[2] = 1 / sin(ϕ) * (sin((1 - t) * ϕ) * v_start + sin(t * ϕ) * v_end)
+    end
+
+    # Other vectors (by reflecting pt_{i-2} across pt_{i-1} along the arc)
     dot_product = 2 * arc_steps[1] ⋅ arc_steps[2]
     for i in 3:segments
         arc_steps[i] = dot_product * arc_steps[i-1] - arc_steps[i-2]
@@ -128,15 +147,14 @@ function arc(v_start, v_end, segments)
 end
 
 function plot_setup!(scene, points, texture, is_mandel, f, c)
+    msh = uv_normal_mesh(Tesselation(Sphere(Point3f(0), 1f0), 50))
     mesh!(
         scene,
-        Sphere(Point3f(0), 1.0),
+        msh,
         color=texture,
         colormap=:twilight,
         colorrange=(0.0, 1.0),
         shading=FastShading,
-        transparency=true,
-        alpha=0.99,
     )
 
     camera = Camera3D(
@@ -153,12 +171,12 @@ function plot_setup!(scene, points, texture, is_mandel, f, c)
     mark_point = Observable(Point(0, 1))
     # mark_vector = @lift(indices_to_vector(closest_indices($mark_point, $points), size($points)[1]))
 
-    path_length = is_mandel ? Observable(1) : Observable(10)
+    path_length = is_mandel ? Observable(1) : Observable(1)
     path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f, $mark_point, $c, $path_length))
     path_vectors = @lift begin
         vectors = Vector{Vec3f}(undef, $path_length)
         for i in 1:$path_length
-            @inbounds vectors[i] = indices_to_vector(closest_indices($path_points[i], $points), size($points)[1])
+            @inbounds vectors[i] = 1.01 .* indices_to_vector(closest_indices($path_points[i], $points), size($points)[1])
         end
         return vectors
     end
@@ -169,7 +187,7 @@ function plot_setup!(scene, points, texture, is_mandel, f, c)
         for i in 2:$path_length
             v1 = $path_vectors[i - 1]
             v2 = $path_vectors[i]
-            trace[(i-2) * segments + 1 : (i-1) * segments] = arc(v1, v2, segments)
+            trace[(i-2) * segments + 1 : (i-1) * segments] = 1.01 .* arc(v1, v2, segments)
         end
 
         trace[end] = $path_vectors[end]
@@ -177,12 +195,12 @@ function plot_setup!(scene, points, texture, is_mandel, f, c)
     end
 
     scatter!(scene, focus_vector, color=:red)
-    scatter!(scene, path_vectors, color=:blue)
+    scatter!(scene, path_vectors, color=:blue, markersize = 12)
     lines!(scene, trace, color=:blue, linewidth = 2)
 
     return View3D(
         scene, camera, points, texture, focus_vector, focus_point,
-        mark_point, path_points, path_vectors, path_length, trace,
+        mark_point, path_points, path_vectors, path_length
     )
 end
 
@@ -261,15 +279,15 @@ function put_menu!(figure, view)
     return markbutton, menu
 end
 
-function Viewer3D(f::Function; crit=0.0im, c=0.0im)
+function Viewer3D(f::Function; crit=0.0im, c=0.0im, longitudes=501)
     rational_map = RationalMap(f, crit)
     state = State(1e-4, 200)
     figure = Figure(size=(1000, 560))
 
     # Initialize Mandel and Julia Views
-    meridian = 501
-    mandel = init_view3D(meridian, figure[1, 1], rational_map.f, rational_map.crit, state, true)
-    julia = init_view3D(meridian, figure[1, 2], rational_map.f, mandel.mark_point, state, false)
+    longitudes = longitudes % 2 == 1 ? longitudes : longitudes + 1 # has to be an odd number
+    mandel = init_view3D(longitudes, figure[1, 1], rational_map.f, rational_map.crit, state, true)
+    julia = init_view3D(longitudes, figure[1, 2], rational_map.f, mandel.mark_point, state, false)
 
     rowsize!(figure.layout, 1, Aspect(1, 1))
     colgap!(figure.layout, 5)
@@ -281,17 +299,17 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im)
         notify(julia.points)
     end
 
-    Label(menu[1, 5], "Orbit\nLength:")
+    Label(menu[1, 5], "Iterates:")
 
     orbit_length_input = Textbox(
         menu[1, 6],
         width = 50,
-        placeholder = string(julia.path_length[]),
+        placeholder = string(julia.path_length[] - 1),
         validator = Int,
     )
 
     on(orbit_length_input.stored_string) do s
-        julia.path_length[] = parse(Int, s)
+        julia.path_length[] = max(parse(Int, s), 0) + 1
     end
 
     return Viewer3D(rational_map, figure, state, mandel, julia)
