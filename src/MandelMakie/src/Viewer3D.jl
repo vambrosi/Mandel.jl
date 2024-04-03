@@ -109,6 +109,24 @@ function closest_indices(point, points)
     return indices
 end
 
+function arc(v_start, v_end, segments)
+    arc_steps = Vector{Vec3f}(undef, segments)
+    arc_steps[1] = v_start
+
+    # First vector after v_start (slerp formula)
+    ϕ = acos(clamp(v_start ⋅ v_end/(norm(v_start) * norm(v_end)), -1, 1))
+    t = 1 / segments
+    arc_steps[2] = 1 / sin(ϕ) * (sin((1 - t) * ϕ) * v_start + sin(t * ϕ) * v_end)
+
+    # Other vectors
+    dot_product = 2 * arc_steps[1] ⋅ arc_steps[2]
+    for i in 3:segments
+        arc_steps[i] = dot_product * arc_steps[i-1] - arc_steps[i-2]
+    end
+
+    return arc_steps
+end
+
 function plot_setup!(scene, points, texture, is_mandel, f, c)
     mesh!(
         scene,
@@ -117,6 +135,8 @@ function plot_setup!(scene, points, texture, is_mandel, f, c)
         colormap=:twilight,
         colorrange=(0.0, 1.0),
         shading=FastShading,
+        transparency=true,
+        alpha=0.99,
     )
 
     camera = Camera3D(
@@ -144,21 +164,21 @@ function plot_setup!(scene, points, texture, is_mandel, f, c)
     end
 
     trace = @lift begin
-        segment_length = 20
-        trace = Vector{Vec3f}(undef, ($path_length - 1) * segment_length + 1)
+        segments = 20
+        trace = Vector{Vec3f}(undef, ($path_length - 1) * segments + 1)
         for i in 2:$path_length
-            for j in 1:segment_length
-                t = (j-1) / segment_length
-                trace[j + (i-2)*segment_length] = 1.01 * normalize((1 - t) * $path_vectors[i-1] + t * $path_vectors[i])
-            end
+            v1 = $path_vectors[i - 1]
+            v2 = $path_vectors[i]
+            trace[(i-2) * segments + 1 : (i-1) * segments] = arc(v1, v2, segments)
         end
+
         trace[end] = $path_vectors[end]
         return trace
     end
 
     scatter!(scene, focus_vector, color=:red)
     scatter!(scene, path_vectors, color=:blue)
-    lines!(scene, trace, color=:blue)
+    lines!(scene, trace, color=:blue, linewidth = 2)
 
     return View3D(
         scene, camera, points, texture, focus_vector, focus_point,
