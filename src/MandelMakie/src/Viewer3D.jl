@@ -146,7 +146,7 @@ function arc(v0, v1, segments)
     return arc_steps
 end
 
-function plot_setup!(scene, points, texture, is_mandel, f, c)
+function plot_setup!(scene, points, texture, is_mandel, f, c, mark)
     msh = uv_normal_mesh(Tesselation(Sphere(Point3f(0), 1f0), 50))
     mesh!(
         scene,
@@ -168,8 +168,7 @@ function plot_setup!(scene, points, texture, is_mandel, f, c)
     focus_vector = @lift(normalize($(camera.eyeposition)))
     focus_point = @lift(closest_point($focus_vector, $points))
 
-    mark_point = Observable(Point(0, 1))
-    # mark_vector = @lift(indices_to_vector(closest_indices($mark_point, $points), size($points)[1]))
+    mark_point = isfinite(mark) ? Observable(Point(mark, 1)) : Observable(Point(1, 0))
 
     path_length = is_mandel ? Observable(1) : Observable(1)
     path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f, $mark_point, $c, $path_length))
@@ -204,7 +203,7 @@ function plot_setup!(scene, points, texture, is_mandel, f, c)
     )
 end
 
-function init_view3D(longitudes, figure, f, c, state, is_mandel)
+function init_view3D(longitudes, figure, f, c, state, is_mandel, mark=0.0im)
     meridians = 2 * longitudes - 1
 
     scene = LScene(figure, show_axis=false)
@@ -216,7 +215,7 @@ function init_view3D(longitudes, figure, f, c, state, is_mandel)
     end
 
     reset_points!(points)
-    view = plot_setup!(scene, points, texture, is_mandel, f, c)
+    view = plot_setup!(scene, points, texture, is_mandel, f, c, mark)
 
     return view
 end
@@ -286,8 +285,8 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im, longitudes=501)
 
     # Initialize Mandel and Julia Views
     longitudes = longitudes % 2 == 1 ? longitudes : longitudes + 1 # has to be an odd number
-    mandel = init_view3D(longitudes, figure[1, 1], rational_map.f, rational_map.crit, state, true)
-    julia = init_view3D(longitudes, figure[1, 2], rational_map.f, mandel.mark_point, state, false)
+    mandel = init_view3D(longitudes, figure[1, 1], rational_map.f_proj, rational_map.crit, state, true, c)
+    julia = init_view3D(longitudes, figure[1, 2], rational_map.f_proj, mandel.mark_point, state, false)
 
     rowsize!(figure.layout, 1, Aspect(1, 1))
     colgap!(figure.layout, 5)
@@ -316,3 +315,9 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im, longitudes=501)
 end
 
 Base.show(io::IO, viewer::Viewer3D) = display(GLMakie.Screen(), viewer.figure)
+
+function set_parameter!(viewer::Viewer3D, c)
+    viewer.mandel.mark_point[] = isfinite(c) ? Point(c, 1) : Point(1, 0)
+    notify(viewer.julia.points)
+    return nothing
+end

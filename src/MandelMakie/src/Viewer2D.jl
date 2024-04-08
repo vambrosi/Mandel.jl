@@ -420,13 +420,22 @@ struct Viewer
 	function Viewer(
 			f;
             crit=0.0im,
+			c=0.0im,
 			mandel_center=0.0im,
 			mandel_diam=4.0,
+			julia_center=0.0im,
 			julia_diam=4.0,
-			coloring_algorithm=escape_time,
+			coloring_algorithm=:escape_time,
 		)
+
+		algs = Dict(
+			:escape_time => escape_time,
+			:stop_time => stop_time,
+			:escape_preperiod => escape_preperiod
+		)
+
         d_system = DynamicalSystem(f, crit)
-		options = ViewerOptions(100.0, 200, 1, 1, coloring_algorithm)
+		options = ViewerOptions(100.0, 200, 1, 1, algs[coloring_algorithm])
 		state = ViewerState(:pick)
 		figure = Figure(figure_padding=10, size=(900, 510))
 
@@ -439,9 +448,9 @@ struct Viewer
 
 		julia = JuliaView(
 			axis = Axis(figure[1, 1][1, 2], aspect=AxisAspect(1)),
-			center = d_system.crit(mandel_center),
+			center = julia_center,
 			diameter = julia_diam,
-			parameter = mandel_center,
+			parameter = c,
 			pixels = 1000,
 		)
 

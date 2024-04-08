@@ -55,6 +55,7 @@ end
 
 struct RationalMap
 	f::Function
+	f_proj::Function
 	crit::Function
 
 	function RationalMap(f, crit)
@@ -64,6 +65,6 @@ struct RationalMap
             crit_function = (_) -> Point(crit, 1.0)
         end
 
-		return new(to_point_family(f), crit_function)
+		return new(f, to_point_family(f), crit_function)
 	end
 end

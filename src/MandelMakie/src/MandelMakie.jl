@@ -1,6 +1,6 @@
 module MandelMakie
 
-export Viewer, Viewer3D
+export Viewer, Viewer3D, set_parameter!
 
 using GLMakie, Symbolics, Parameters
 
