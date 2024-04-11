@@ -102,14 +102,36 @@ function Julia3D(f::Function, c::Number; show_critical_points=false)
 
     post_critical_orbit_points = []
     post_critical_orbit_vectors = []
+    post_critical_orbit_traces = []
     for crit_pt in crit_pts
-        orbit = attracting_orbit(f_proj, crit_pt, Point(c, 1), 1e-4, 500)
-        push!(post_critical_orbit_points, orbit)
-        push!(post_critical_orbit_vectors, @lift(1.005 .* point_to_vector.(orbit; mobius=$inv_mobius)))
+        orbit_points = attracting_orbit(f_proj, crit_pt, Point(c, 1), 1e-4, 500)
+        push!(post_critical_orbit_points, orbit_points)
+
+        orbit_vectors = @lift(1.005 .* point_to_vector.(orbit_points; mobius=$inv_mobius))
+        push!(post_critical_orbit_vectors, orbit_vectors)
+
+        trace = @lift begin
+            segments = 20
+            path_length = length(orbit_points)
+            trace = Vector{Vec3f}(undef, (path_length - 1) * segments + 1)
+            for i in 2:path_length
+                v1 = $orbit_vectors[i - 1]
+                v2 = $orbit_vectors[i]
+                trace[(i-2) * segments + 1 : (i-1) * segments] = 1.01 .* arc(v1, v2, segments)
+            end
+
+            trace[end] = $orbit_vectors[end]
+            return trace
+        end
+        push!(post_critical_orbit_traces, trace)
     end
 
     for (i, orbit) in enumerate(post_critical_orbit_vectors)
         scatter!(scene, orbit, color = 2 + mod1(2*i, 8), colormap=:tab10, colorrange = (1, 10))
+    end
+
+    for (i, trace) in enumerate(post_critical_orbit_traces)
+        lines!(scene, trace, color = 2 + mod1(2*i, 8), colormap=:tab10, colorrange = (1, 10), linewidth = 2)
     end
 
     menu = GridLayout(
