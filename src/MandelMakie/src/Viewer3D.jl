@@ -42,13 +42,13 @@ function reset_points!(points)
     return points
 end
 
-function update_texture!(texture, points, f, crit::Function, state)
+function update_texture!(texture, points, f_proj, crit::Function, state)
     height, width = size(points)
 
     Threads.@threads for column in 1:width
         for row in 1:height
             pt = points[row, column]
-            @inbounds texture[][row, column] = multiplier(f, crit(pt), pt, state.ε, state.max_iter)
+            @inbounds texture[][row, column] = multiplier(f_proj, crit(pt), pt, state.ε, state.max_iter)
         end
     end
 
@@ -56,13 +56,13 @@ function update_texture!(texture, points, f, crit::Function, state)
     return texture
 end
 
-function update_texture!(texture, points, f, c::Observable{Point}, state)
+function update_texture!(texture, points, f_proj, c::Observable{Point}, state)
     height, width = size(points)
 
     Threads.@threads for column in 1:width
         for row in 1:height
             pt = points[row, column]
-            @inbounds texture[][row, column] = multiplier(f, pt, c[], state.ε, state.max_iter)
+            @inbounds texture[][row, column] = multiplier(f_proj, pt, c[], state.ε, state.max_iter)
         end
     end
 
@@ -146,7 +146,7 @@ function arc(v0, v1, segments)
     return arc_steps
 end
 
-function plot_setup!(scene, points, texture, is_mandel, f, c, mark)
+function plot_setup!(scene, points, texture, is_mandel, f_proj, c, mark)
     msh = uv_normal_mesh(Tesselation(Sphere(Point3f(0), 1f0), 50))
     mesh!(
         scene,
@@ -171,7 +171,7 @@ function plot_setup!(scene, points, texture, is_mandel, f, c, mark)
     mark_point = isfinite(mark) ? Observable(Point(mark, 1)) : Observable(Point(1, 0))
 
     path_length = is_mandel ? Observable(1) : Observable(1)
-    path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f, $mark_point, $c, $path_length))
+    path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f_proj, $mark_point, $c, $path_length))
     path_vectors = @lift begin
         vectors = Vector{Vec3f}(undef, $path_length)
         for i in 1:$path_length
@@ -203,7 +203,7 @@ function plot_setup!(scene, points, texture, is_mandel, f, c, mark)
     )
 end
 
-function init_view3D(longitudes, figure, f, c, state, is_mandel, mark=0.0im)
+function init_view3D(longitudes, figure, f_proj, c, state, is_mandel, mark=0.0im)
     meridians = 2 * longitudes - 1
 
     scene = LScene(figure, show_axis=false)
@@ -211,11 +211,11 @@ function init_view3D(longitudes, figure, f, c, state, is_mandel, mark=0.0im)
 
     texture = Observable(Matrix{Float64}(undef, longitudes, meridians))
     on(points) do points
-        update_texture!(texture, points, f, c, state)
+        update_texture!(texture, points, f_proj, c, state)
     end
 
     reset_points!(points)
-    view = plot_setup!(scene, points, texture, is_mandel, f, c, mark)
+    view = plot_setup!(scene, points, texture, is_mandel, f_proj, c, mark)
 
     return view
 end

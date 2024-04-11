@@ -10,6 +10,7 @@ begin
 	# It will install the necessary packages the first time it runs.
 	using Pkg
 	Pkg.activate(@__DIR__)
+	Pkg.instantiate()
 
 	# Includes the file with definitions and imports the relevant modules
 	include("./src/MandelMakie.jl")
@@ -18,6 +19,8 @@ begin
 	# The next lines are necessary because Pluto does not expose the exported variables of a local package. You can skip those lines if you are loading this package into the REPL or Jupyter notebook.
 	Viewer = MandelMakie.Viewer
 	Viewer3D = MandelMakie.Viewer3D
+	Julia3D = MandelMakie.Julia3D
+	to_complex = MandelMakie.to_complex
 	set_parameter! = MandelMakie.set_parameter!
 end
 
@@ -34,7 +37,7 @@ First, you define a family of complex maps (don't put type annotations)
 """
 
 # ╔═╡ f49a6cef-86c9-4a47-a9ff-30588b3de27c
-f(z, λ) = z^2 + λ/z^2
+f(z, λ) = z^2 + λ / z^2
 
 # ╔═╡ 89426560-0874-45a2-a2dd-6b2a044faabb
 crit(λ) = λ^(1/4)
@@ -100,6 +103,27 @@ md"""
 The default parameters are shown in the cell above.
 """
 
+# ╔═╡ 6b30f798-21b3-44f0-a8a0-c8f06da21b33
+md"""
+### Julia Plots using Critical Orbits
+"""
+
+# ╔═╡ 86bac24f-3c40-4df5-8de4-203aa117625f
+# ╠═╡ disabled = true
+#=╠═╡
+viewer = Viewer3D(f; crit=crit, c=0.1)
+  ╠═╡ =#
+
+# ╔═╡ 7b36362f-2fe0-41d1-be46-852317d59b9c
+#=╠═╡
+c = to_complex(viewer.mandel.mark_point[])
+  ╠═╡ =#
+
+# ╔═╡ 4c9a0b66-d13a-45a0-a07c-0389f2054d1b
+#=╠═╡
+Julia3D(f, c)
+  ╠═╡ =#
+
 # ╔═╡ 8a161348-be92-47cc-8e3c-62f74b8d96d2
 md"""
 ## Complex Projective Line Plots
@@ -146,6 +170,10 @@ md"""
 # ╟─879a14f8-207c-4510-b94d-0e7f6f392175
 # ╠═488a4334-a776-4a49-a800-93b13dfbce49
 # ╟─ad2e8d1e-deac-4457-bfcb-dc256a32cdae
+# ╟─6b30f798-21b3-44f0-a8a0-c8f06da21b33
+# ╠═86bac24f-3c40-4df5-8de4-203aa117625f
+# ╠═7b36362f-2fe0-41d1-be46-852317d59b9c
+# ╠═4c9a0b66-d13a-45a0-a07c-0389f2054d1b
 # ╟─8a161348-be92-47cc-8e3c-62f74b8d96d2
 # ╟─3ba77924-33c1-4d47-8367-379766a58a95
 # ╠═105f8b1b-de30-4f98-986f-9b667b87949b

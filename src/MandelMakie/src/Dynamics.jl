@@ -139,6 +139,10 @@ const Point = MVector{2, ComplexF64}
 
 const Mobius = SMatrix{2, 2, ComplexF64}
 
+function to_complex(pt::Point)
+    return pt[1] / pt[2]
+end
+
 function antipodal_hyperbolic(fixed_point, scale_factor)
     pt_normalized = normalize(fixed_point)
     u = pt_normalized[1]
@@ -167,69 +171,78 @@ function orbit(f::Function, pt::Point, c::Point, length::Int)
     return points
 end
 
-function multiplier(
-	f::Function,
-	pt::Point,
-	c::Point,
-	ε::Real,
-	max_iter::Integer
+struct NearbyPoints
+    close::Bool
+    iterations::Int
+    slow::Point
+    fast::Point
+end
+
+function find_period_multiple(f::Function, pt::Point, c::Point, ε::Real, max_iter::Integer)
+    slow = fast = pt
+
+    for period_multiple in 1:max_iter
+        slow = f(slow, c)
+        fast = f(f(fast, c), c)
+
+        distance(slow, fast) <= ε && return NearbyPoints(true, period_multiple, slow, fast)
+    end
+
+    return NearbyPoints(false, max_iter, slow, fast)
+end
+
+function iterate_slow_until_close(f::Function, slow::Point, fast::Point, c::Point, ε::Real, max_iter::Integer)
+    for period in 1:max_iter
+        slow = f(slow, c)
+
+        distance(slow, fast) <= ε && return NearbyPoints(true, period, slow, fast)
+    end
+
+    return NearbyPoints(false, max_iter, slow, fast)
+end
+
+function orbit_until_close(f::Function, orbiter::Point, reference::Point, c::Point, ε::Real, max_iter::Integer)
+    orbit = [orbiter]
+    for _ in 1:max_iter
+        orbiter = f(orbiter, c)
+        distance(orbiter, reference) <= ε && return orbit
+        push!(orbit, orbiter)
+    end
+
+    return orbit
+end
+
+function iterate_both_until_close(
+    f::Function, pt1::Point, pt2::Point, c::Point, ε::Real, max_iter::Integer
 )
-    tortoise = hare = pt
+    for iteration in 0:max_iter
+        distance(pt1, pt2) <= ε && return NearbyPoints(true, iteration, pt1, pt2)
 
-	iter = 1
-	period_multiple = 1
-	while iter <= max_iter
-		tortoise = f(tortoise, c)
-		hare = f(f(hare, c), c)
+        pt1 = f(pt1, c)
+        pt2 = f(pt2, c)
+    end
 
-		if distance(hare, tortoise) <= ε
-			period_multiple = iter
-			break
-		end
+    return NearbyPoints(false, max_iter, pt1, pt2)
+end
 
-		iter += 1
-	end
+function multiplier(f::Function, pt::Point, c::Point, ε::Real, max_iter::Integer)
 
-	if iter == max_iter + 1
-		return 0.5
-	end
+    first_approach = find_period_multiple(f, pt, c, ε, max_iter)
+    !first_approach.close && return DEFAULT_VALUE
 
-	μ = 1
-	iter = 1
-	period = 1
-	while iter <= period_multiple
-		tortoise = f(tortoise, c)
-		# μ *= df(tortoise, c)
+    period_data = iterate_slow_until_close(f, first_approach.slow, first_approach.fast, c, ε, max_iter)
+    !period_data.close && return DEFAULT_VALUE
 
-		if distance(hare, tortoise) <= ε
-			period = iter
-			break
-		end
+    preperiod_data = iterate_both_until_close(f, pt, period_data.fast, c, ε, max_iter)
+    !preperiod_data.close && return DEFAULT_VALUE
 
-		iter += 1
-	end
+	return mod((preperiod_data.iterations / period_data.iterations) / 64.0, 1.0)
+end
 
-	if iter == period_multiple + 1
-		return 0.5
-	end
+function attracting_orbit(f::Function, pt::Point, c::Point, ε::Real, max_iter::Integer)
+    first_approach = find_period_multiple(f, pt, c, ε, max_iter)
+    !first_approach.close && return Point[]
 
-	tortoise = pt
-	iter = 0
-	preperiod = 0
-	while iter <= max_iter
-		if distance(hare, tortoise) <= ε
-			preperiod = iter
-			break
-		end
-
-		tortoise = f(tortoise, c)
-		hare = f(hare, c)
-		iter += 1
-	end
-
-	if iter == max_iter + 1
-		return 0.5
-	end
-
-	return mod((preperiod / period) / 64.0, 1.0)
+    orbit = orbit_until_close(f, first_approach.slow, first_approach.fast, c, ε, max_iter)
+    return orbit
 end

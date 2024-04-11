@@ -1,6 +1,7 @@
 # --------------------------------------------------------------------------------------- #
 # Parsing Functions
 # --------------------------------------------------------------------------------------- #
+using Polynomials
 
 struct DynamicalSystem
 	f::Function
@@ -27,6 +28,12 @@ struct DynamicalSystem
 
 		return new(f, df_dz, df_dc, crit_function)
 	end
+end
+
+function derivative(f)
+	@variables z, c
+	df = expand_derivatives(Differential(z)(f(z, c)))
+	return build_function(df, z, c, expression=Val{false})
 end
 
 function to_point_family(f)
@@ -56,6 +63,10 @@ end
 struct RationalMap
 	f::Function
 	f_proj::Function
+
+	df::Function
+	df_proj::Function
+
 	crit::Function
 
 	function RationalMap(f, crit)
@@ -65,6 +76,63 @@ struct RationalMap
             crit_function = (_) -> Point(crit, 1.0)
         end
 
-		return new(f, to_point_family(f), crit_function)
+		df = derivative(f)
+		return new(f, to_point_family(f), df, to_point_family(df), crit_function)
 	end
+end
+
+function critical_points(func, parameter)
+	@variables z, u, v, c
+
+	f = func(z, c)
+	df = expand_derivatives(Differential(z)(f))
+
+	# Hack to write rational function as a ratio of polynomials
+	# (Not sure it works on all cases.)
+	df = df |>
+		(x -> substitute(x, Dict(z => u / v))) |>
+		simplify |>
+		(x -> substitute(x, Dict(u => z, v => 1)))
+
+	# Get numerator and denominator polynomials
+	num, den = df |>
+		Symbolics.value |>
+		Symbolics.arguments
+
+	num = substitute(num, Dict(c => parameter))
+	den = substitute(den, Dict(c => parameter))
+
+	num_coeffs = coeffs(num, z)
+	den_coeffs = coeffs(den, z)
+
+	num_roots = roots(Polynomial(num_coeffs))
+	den_roots = roots(Polynomial(den_coeffs))
+
+	pts = Point.(unique!(vcat(num_roots, den_roots)), 1)
+
+	df_func = build_function(df, z, c, expression=Val{false})
+	df_value_at_inf = to_point_family(df_func)(Point(1, 0), Point(parameter, 1))
+	if isapprox(distance(df_value_at_inf, Point(1, 0)), 0) ||
+			isapprox(distance(df_value_at_inf, Point(0, 1)), 0)
+		push!(pts, Point(1, 0))
+	end
+
+	return pts
+end
+
+function coeffs(polynomial, z)
+	higher_terms = polynomial
+	coefficients = ComplexF64[]
+
+	cutoff_test = 0
+	while !isequal(higher_terms, 0) || cutoff_test > 10
+		coefficient = substitute(higher_terms, Dict(z => 0))
+		push!(coefficients, Symbolics.value(coefficient))
+
+		higher_terms -= coefficient
+		higher_terms = simplify(higher_terms / z)
+		cutoff_test += 1
+	end
+
+	return coefficients
 end
