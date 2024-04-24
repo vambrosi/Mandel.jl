@@ -143,16 +143,15 @@ function to_complex(pt::Point)
     return pt[1] / pt[2]
 end
 
-function antipodal_hyperbolic(fixed_point, scale_factor)
-    pt_normalized = normalize(fixed_point)
-    u = pt_normalized[1]
-    v = pt_normalized[2]
+function hyperbolic(fixed_pt1, fixed_pt2, scale_factor)
+    pt1 = normalize(fixed_pt1)
+    pt2 = normalize(fixed_pt2)
 
     return Mobius(
-        abs2(u) + scale_factor * abs2(v),
-        (1 - scale_factor) * conj(u) * v,
-        (1 - scale_factor) * u * conj(v),
-        scale_factor * abs2(u) + abs2(v)
+        pt1[1] * pt2[2] - scale_factor * pt2[1] * pt1[2],
+        (1 - scale_factor) * pt1[2] * pt2[2],
+        (scale_factor - 1) * pt1[1] * pt2[1],
+        scale_factor * pt1[1] * pt2[2] - pt2[1] * pt1[2]
     )
 end
 
@@ -237,6 +236,28 @@ function multiplier(f::Function, pt::Point, c::Point, ε::Real, max_iter::Intege
     !preperiod_data.close && return DEFAULT_VALUE
 
 	return mod((preperiod_data.iterations / period_data.iterations) / 64.0, 1.0)
+end
+
+struct FatouIterationDistance
+    preperiod::Int
+    period::Int
+    component_index::Int
+end
+
+function convergence_time(f::Function, pt::Point, c::Point, attractors, ε::Real, max_iter::Integer)
+    pt = normalize(pt)
+
+    for preperiod in 0:max_iter
+        for (component_index, attractor) in enumerate(attractors)
+            for limit_pt in attractor
+                distance(pt, limit_pt) <= ε && return FatouIterationDistance(preperiod, length(attractor), component_index)
+            end
+        end
+
+        pt = f(pt, c)
+    end
+
+    return FatouIterationDistance(max_iter, 1, 0)
 end
 
 function attracting_orbit(f::Function, pt::Point, c::Point, ε::Real, max_iter::Integer)

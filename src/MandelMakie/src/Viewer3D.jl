@@ -1,112 +1,63 @@
-using GeometryBasics: Tesselation, uv_normal_mesh
+using GeometryBasics: Tesselation, uv_normal_mesh, coordinates
+using GeometryBasics: mesh as meshGB
+
+const id_mobius = Mobius(1, 0, 0, 1)
 
 mutable struct State
     ε::Float64
     max_iter::Int
 end
 
-mutable struct View3D
+struct View3D
     scene::LScene
     camera::Camera3D
 
-    points::Observable{Matrix{Point}}
-    texture::Observable{Matrix{Float64}}
+    vertex_colors::Observable{Vector{Float64}}
+    mobius::Observable{Mobius}
 
-    focus_vector::Observable{Vec3f}
-    focus_point::Observable{Point}
+    focus::Observable{Point}
+    focus_antipode::Observable{Point}
+    mark::Observable{Point}
 
-    # mark_vector::Observable{Vec3f}
-    mark_point::Observable{Point}
-
-    path_points::Observable{Vector{Point}}
-    path_vectors::Observable{Vector{Vec3f}}
+    path::Observable{Vector{Point}}
     path_length::Observable{Int}
 end
 
-function reset_points!(points)
-    longitudes, _ = size(points[])
-    δ = pi / (longitudes - 1)
+function vector_to_point(v; mobius::Mobius = id_mobius)
+    # Assumes v is in the 2-sphere
+    isapprox(v, Vec3f(0, 0, 1)) && return Point(1, 0)
 
-    for c in CartesianIndices(points[])
-        φ = (c[1] - 1) * δ
-        θ = (c[2] - 1) * δ
+    θ, φ = mod2pi(angle(complex(v[1], v[2]))), acos(v[3])
+    pt = mobius * Point(sin(φ) * exp(im * θ), 1 - cos(φ))
 
-        if φ == 0
-            points[][c] = Point(1, 0)
-        else
-            points[][c] = normalize(Point(sin(φ) * exp(im * θ), 1 - cos(φ)))
-        end
+    # Returns a point in the 3-sphere
+    return normalize(pt)
+end
+
+function point_to_vector(pt::Point; mobius::Mobius = id_mobius)
+    new_pt = mobius * pt
+    w = 2 * new_pt[1] * conj(new_pt[2])
+    z = abs2(new_pt[1]) - abs2(new_pt[2])
+    v = Vec3f(real(w), imag(w), z)
+
+    # Returns a point in the 2-sphere
+    return normalize(v)
+end
+
+function update_colors!(vertex_colors, vertices, f_proj, c::Point, mobius, state)
+    Threads.@threads for i in eachindex(vertices)
+        pt = vector_to_point(normalize(vertices[i]); mobius=mobius)
+        @inbounds vertex_colors[][i] = multiplier(f_proj, pt, c, state.ε, state.max_iter)
     end
-
-    notify(points)
-    return points
+    notify(vertex_colors)
 end
 
-function update_texture!(texture, points, f_proj, crit::Function, state)
-    height, width = size(points)
-
-    Threads.@threads for column in 1:width
-        for row in 1:height
-            pt = points[row, column]
-            @inbounds texture[][row, column] = multiplier(f_proj, crit(pt), pt, state.ε, state.max_iter)
-        end
+function update_colors!(vertex_colors, vertices, f_proj, crit::Function, mobius, state)
+    Threads.@threads for i in eachindex(vertices)
+        c = vector_to_point(normalize(vertices[i]); mobius=mobius)
+        @inbounds vertex_colors[][i] = multiplier(f_proj, crit(c), c, state.ε, state.max_iter)
     end
-
-    notify(texture)
-    return texture
-end
-
-function update_texture!(texture, points, f_proj, c::Observable{Point}, state)
-    height, width = size(points)
-
-    Threads.@threads for column in 1:width
-        for row in 1:height
-            pt = points[row, column]
-            @inbounds texture[][row, column] = multiplier(f_proj, pt, c[], state.ε, state.max_iter)
-        end
-    end
-
-    notify(texture)
-    return texture
-end
-
-function indices_to_vector(indices, longitudes)
-    δ = pi / (longitudes - 1)
-
-    φ = (indices[1] - 1) * δ
-    θ = (indices[2] - 1) * δ
-
-    x = sin(φ) * cos(θ)
-    y = sin(φ) * sin(θ)
-    z = cos(φ)
-
-    return Vec3f(x, y, z)
-end
-
-function closest_point(point, points)
-    x, y, z = normalize(point)
-    θ, φ = mod2pi(angle(complex(x, y))), acos(z)
-
-    longitudes, meridians = size(points)
-    row = round(Int, (longitudes - 1) * φ / pi + 1)
-    column = round(Int, (meridians - 1) * θ / (2 * pi) + 1)
-
-    return points[row, column]
-end
-
-function closest_indices(point, points)
-    d = 4.0
-    indices = CartesianIndex(1, 1)
-
-    for c in CartesianIndices(points)
-        current_d = distance(point, points[c])
-        if current_d < d
-            d = current_d
-            indices = c
-        end
-    end
-
-    return indices
+    notify(vertex_colors)
 end
 
 function arc(v0, v1, segments)
@@ -146,12 +97,25 @@ function arc(v0, v1, segments)
     return arc_steps
 end
 
-function plot_setup!(scene, points, texture, is_mandel, f_proj, c, mark)
-    msh = uv_normal_mesh(Tesselation(Sphere(Point3f(0), 1f0), 50))
+function View3D(figure, f_proj, c, state; is_mandel, mark)
+    scene = LScene(figure, show_axis=false)
+
+    _mesh = meshGB(Tesselation(Sphere(Point3f(0), 1), 800))
+    vertices = coordinates(_mesh)
+
+    mobius = Observable{Mobius}(id_mobius)
+    inv_mobius = @lift(inv($mobius))
+    vertex_colors = Observable(similar(vertices, Float64))
+
+    onany(mobius, c) do M, c
+        update_colors!(vertex_colors, vertices, f_proj, c, M, state)
+    end
+    notify(mobius)
+
     mesh!(
         scene,
-        msh,
-        color=texture,
+        _mesh,
+        color=vertex_colors,
         colormap=:twilight,
         colorrange=(0.0, 1.0),
         shading=FastShading,
@@ -166,19 +130,14 @@ function plot_setup!(scene, points, texture, is_mandel, f_proj, c, mark)
     )
 
     focus_vector = @lift(normalize($(camera.eyeposition)))
-    focus_point = @lift(closest_point($focus_vector, $points))
+    focus_point = @lift(vector_to_point($focus_vector; mobius=$mobius))
+    focus_antipode_point = @lift(vector_to_point(- $focus_vector; mobius=$mobius))
 
     mark_point = isfinite(mark) ? Observable(Point(mark, 1)) : Observable(Point(1, 0))
 
-    path_length = is_mandel ? Observable(1) : Observable(1)
+    path_length = Observable{Int}(1)
     path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f_proj, $mark_point, $c, $path_length))
-    path_vectors = @lift begin
-        vectors = Vector{Vec3f}(undef, $path_length)
-        for i in 1:$path_length
-            @inbounds vectors[i] = 1.01 .* indices_to_vector(closest_indices($path_points[i], $points), size($points)[1])
-        end
-        return vectors
-    end
+    path_vectors = @lift(1.01 .* point_to_vector.($path_points; mobius=$inv_mobius))
 
     trace = @lift begin
         segments = 20
@@ -198,43 +157,21 @@ function plot_setup!(scene, points, texture, is_mandel, f_proj, c, mark)
     lines!(scene, trace, color=:blue, linewidth = 2)
 
     return View3D(
-        scene, camera, points, texture, focus_vector, focus_point,
-        mark_point, path_points, path_vectors, path_length
+        scene, camera, vertex_colors, mobius,
+        focus_point, focus_antipode_point, mark_point,
+        path_points, path_length
     )
 end
 
-function init_view3D(longitudes, figure, f_proj, c, state, is_mandel, mark=0.0im)
-    meridians = 2 * longitudes - 1
+abstract type AbstractViewer3D end
 
-    scene = LScene(figure, show_axis=false)
-    points = Observable(Matrix{Point}(undef, longitudes, meridians))
-
-    texture = Observable(Matrix{Float64}(undef, longitudes, meridians))
-    on(points) do points
-        update_texture!(texture, points, f_proj, c, state)
-    end
-
-    reset_points!(points)
-    view = plot_setup!(scene, points, texture, is_mandel, f_proj, c, mark)
-
-    return view
-end
-
-struct Viewer3D
+struct Viewer3D <: AbstractViewer3D
     rational_map::RationalMap
     figure::Figure
     state::State
 
     mandel::View3D
     julia::View3D
-end
-
-function update_points!(points, mobius)
-    for c in CartesianIndices(points[])
-        points[][c] .= normalize(mobius * points[][c])
-    end
-
-    notify(points)
 end
 
 function put_menu!(figure, view)
@@ -250,54 +187,33 @@ function put_menu!(figure, view)
     zoominbutton = Button(menu[1, 1], label="⌕₊", width=30)
 
     on(zoominbutton.clicks) do _
-        mobius = antipodal_hyperbolic(view.focus_point[], 0.5)
-        update_points!(view.points, mobius)
+        view.mobius[] = hyperbolic(view.focus[], view.focus_antipode[], 0.5) * view.mobius[]
     end
 
     zoomoutbutton = Button(menu[1, 2], label="⌕₋", width=30)
 
     on(zoomoutbutton.clicks) do _
-        mobius = antipodal_hyperbolic(view.focus_point[], 2)
-        update_points!(view.points, mobius)
+        view.mobius[] = hyperbolic(view.focus[], view.focus_antipode[], 2.0) * view.mobius[]
     end
 
     resetbutton = Button(menu[1, 3], label="↺", width=30)
 
     on(resetbutton.clicks) do _
-        reset_points!(view.points)
-        update_cam!(view.scene.scene, Vec3f(0, 0, -3), Vec3f(0, 0, 0), Vec3f(0, -1, 0))
+        focus = point_to_vector(view.focus[])
+        view.mobius[] = id_mobius
+        update_cam!(view.scene.scene, 3 * focus, Vec3f(0, 0, 0))
     end
 
     markbutton = Button(menu[1, 4], label="⋅", width=30)
 
     on(markbutton.clicks) do _
-        view.mark_point[] .= closest_point(view.focus_vector[], view.points[])
-        notify(view.mark_point)
+        view.mark[] = view.focus[]
     end
 
     return markbutton, menu
 end
 
-function Viewer3D(f::Function; crit=0.0im, c=0.0im, longitudes=501)
-    rational_map = RationalMap(f, crit)
-    state = State(1e-4, 200)
-    figure = Figure(size=(1000, 560))
-
-    # Initialize Mandel and Julia Views
-    longitudes = longitudes % 2 == 1 ? longitudes : longitudes + 1 # has to be an odd number
-    mandel = init_view3D(longitudes, figure[1, 1], rational_map.f_proj, rational_map.crit, state, true, c)
-    julia = init_view3D(longitudes, figure[1, 2], rational_map.f_proj, mandel.mark_point, state, false)
-
-    rowsize!(figure.layout, 1, Aspect(1, 1))
-    colgap!(figure.layout, 5)
-
-    markbutton, _ = put_menu!(figure[2, 1], mandel)
-    _, menu = put_menu!(figure[2, 2], julia)
-
-    on(markbutton.clicks) do _
-        notify(julia.points)
-    end
-
+function put_julia_menu!(menu, julia)
     Label(menu[1, 5], "Iterates:")
 
     orbit_length_input = Textbox(
@@ -311,13 +227,89 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im, longitudes=501)
         julia.path_length[] = max(parse(Int, s), 0) + 1
     end
 
+    return menu
+end
+
+function Viewer3D(f::Function; crit=0.0im, c=0.0im)
+    rational_map = RationalMap(f, crit)
+    state = State(1e-4, 200)
+    figure = Figure(size=(1000, 560))
+
+    # Initialize Mandel and Julia Views
+    mandel = View3D(
+        figure[1, 1],
+        rational_map.f_proj,
+        Observable(rational_map.crit),
+        state;
+        is_mandel=true,
+        mark=c,
+    )
+    julia = View3D(
+        figure[1, 2],
+        rational_map.f_proj,
+        mandel.mark,
+        state;
+        is_mandel=false,
+        mark=0.0im,
+    )
+
+    rowsize!(figure.layout, 1, Aspect(1, 1))
+    colgap!(figure.layout, 5)
+
+    markbutton, _ = put_menu!(figure[2, 1], mandel)
+    _, menu = put_menu!(figure[2, 2], julia)
+
+    on(markbutton.clicks) do _
+        notify(julia.mobius)
+    end
+
+    put_julia_menu!(menu, julia)
+
     return Viewer3D(rational_map, figure, state, mandel, julia)
 end
 
-Base.show(io::IO, viewer::Viewer3D) = display(GLMakie.Screen(), viewer.figure)
+struct Julia3D <: AbstractViewer3D
+    rational_map::RationalMap
+    figure::Figure
+    state::State
+    julia::View3D
+end
+
+function Julia3D(f::Function, parameter::Number=0.0im)
+    if hasmethod(f, Tuple{ComplexF64, ComplexF64})
+        g = (z, c) -> f(z, c)
+    elseif hasmethod(f, ComplexF64)
+        g = (z, _) -> f(z)
+    else
+        throw("Function not defined!")
+    end
+
+    rational_map = RationalMap(g, 0.0im)
+    state = State(1e-4, 200)
+    figure = Figure(size=(500, 560))
+
+    julia = View3D(
+        figure[1, 1],
+        rational_map.f_proj,
+        Observable(Point(parameter, 1)),
+        state;
+        is_mandel=false,
+        mark=0.0im,
+    )
+
+    rowsize!(figure.layout, 1, Aspect(1, 1))
+    colgap!(figure.layout, 5)
+
+    _, menu = put_menu!(figure[2, 1], julia)
+    put_julia_menu!(menu, julia)
+
+    return Julia3D(rational_map, figure, state, julia)
+end
+
+Base.show(io::IO, viewer::AbstractViewer3D) = display(GLMakie.Screen(), viewer.figure)
 
 function set_parameter!(viewer::Viewer3D, c)
-    viewer.mandel.mark_point[] = isfinite(c) ? Point(c, 1) : Point(1, 0)
-    notify(viewer.julia.points)
+    viewer.mandel.mark[] = isfinite(c) ? Point(c, 1) : Point(1, 0)
+    notify(viewer.julia.mobius)
     return nothing
 end

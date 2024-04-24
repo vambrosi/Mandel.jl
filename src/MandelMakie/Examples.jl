@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.40
+# v0.19.41
 
 using Markdown
 using InteractiveUtils
@@ -10,7 +10,6 @@ begin
 	# It will install the necessary packages the first time it runs.
 	using Pkg
 	Pkg.activate(@__DIR__)
-	Pkg.instantiate()
 
 	# Includes the file with definitions and imports the relevant modules
 	include("./src/MandelMakie.jl")
@@ -20,6 +19,7 @@ begin
 	Viewer = MandelMakie.Viewer
 	Viewer3D = MandelMakie.Viewer3D
 	Julia3D = MandelMakie.Julia3D
+	Fatou3D = MandelMakie.Fatou3D
 	to_complex = MandelMakie.to_complex
 	set_parameter! = MandelMakie.set_parameter!
 end
@@ -57,6 +57,20 @@ Viewer(f; crit=crit, mandel_diam=1.0)
 # ╠═╡ disabled = true
 #=╠═╡
 Viewer3D(f; crit=crit, c=0.1)
+  ╠═╡ =#
+
+# ╔═╡ 7fa7d5e2-f8d3-41c1-9d52-08dc10150fcf
+md"""
+Another example would be the family ``g(z, \lambda)`` given by applying the Newton's method to a polynomial of degree 3 (with roots at ``1``, ``\lambda``, and ``-\lambda``).
+"""
+
+# ╔═╡ ea959fbb-23d7-484f-932d-a64fe7130046
+g(z, λ) = z - (z-1)*(z-λ)*(z+λ) / ((z-1)*(z-λ) + (z-1)*(z+λ) + (z+λ)*(z-λ))
+
+# ╔═╡ 259aebbe-a6ac-4b86-8a27-f12e104c3092
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer3D(g; crit=1/3)
   ╠═╡ =#
 
 # ╔═╡ 654fb826-65c8-4852-83ca-7e7f72351325
@@ -103,27 +117,6 @@ md"""
 The default parameters are shown in the cell above.
 """
 
-# ╔═╡ 6b30f798-21b3-44f0-a8a0-c8f06da21b33
-md"""
-### Julia Plots using Critical Orbits
-"""
-
-# ╔═╡ 86bac24f-3c40-4df5-8de4-203aa117625f
-# ╠═╡ disabled = true
-#=╠═╡
-viewer = Viewer3D(f; crit=crit, c=0.1)
-  ╠═╡ =#
-
-# ╔═╡ 7b36362f-2fe0-41d1-be46-852317d59b9c
-#=╠═╡
-c = to_complex(viewer.mandel.mark_point[])
-  ╠═╡ =#
-
-# ╔═╡ 4c9a0b66-d13a-45a0-a07c-0389f2054d1b
-#=╠═╡
-Julia3D(f, c)
-  ╠═╡ =#
-
 # ╔═╡ 8a161348-be92-47cc-8e3c-62f74b8d96d2
 md"""
 ## Complex Projective Line Plots
@@ -137,18 +130,33 @@ You can pick the Julia set parameter for `Viewer3D` by setting `c` as shown in t
 # ╔═╡ 105f8b1b-de30-4f98-986f-9b667b87949b
 # ╠═╡ disabled = true
 #=╠═╡
-viewer3D = Viewer3D((z,c) -> z^2 + c, longitudes=600)
+viewer3D = Viewer3D((z,c) -> z^2 + c)
   ╠═╡ =#
 
 # ╔═╡ 21dbad3b-86b2-43f7-912e-de5e794640d6
+# ╠═╡ disabled = true
 #=╠═╡
 set_parameter!(viewer3D, -0.12256116687665 -0.74486176661974im)
   ╠═╡ =#
 
-# ╔═╡ 81d8681a-c99c-4be3-9398-f5ed528afd82
+# ╔═╡ 6b30f798-21b3-44f0-a8a0-c8f06da21b33
 md"""
-The parameter `longitudes` gives the number of longitudes in the texture of the sphere (the north and south pole count as 2 degenerate longitudes). The number of meridians is approximately twice the number of longitudes. You can increase the number of longitudes to increase the resolution of the plot, or decrease it to improve performance. Its default value is 501.
+### Julia Plots using Critical Orbits
 """
+
+# ╔═╡ f0551a80-f208-470f-932a-7031e58b2d06
+md"""
+The function `Fatou3D(f, c)` plots the Julia set of the family `f` with parameter `c` and colors each Fatou component according to its limit set.
+"""
+
+# ╔═╡ ebbe4d7f-9ab0-47f2-85e4-c0de7cb141c0
+# ╠═╡ disabled = true
+#=╠═╡
+Fatou3D(f, -0.160129312880546 + 0.13705188507903926im)
+  ╠═╡ =#
+
+# ╔═╡ 9e104891-fcb5-48fd-93a7-b2889381d2a6
+Fatou3D(g, 1.0im)
 
 # ╔═╡ dc85ce65-38a8-4990-86f5-ed6894b96695
 md"""
@@ -163,6 +171,9 @@ md"""
 # ╟─6b1c8547-06de-4bb7-9062-0826ad04b92e
 # ╠═70f82c8f-5b1b-46c7-87b3-5fad91ba1094
 # ╠═048320b4-12f2-4e7f-b267-8b15ad2485e0
+# ╟─7fa7d5e2-f8d3-41c1-9d52-08dc10150fcf
+# ╠═ea959fbb-23d7-484f-932d-a64fe7130046
+# ╠═259aebbe-a6ac-4b86-8a27-f12e104c3092
 # ╟─654fb826-65c8-4852-83ca-7e7f72351325
 # ╟─fc92cb1c-0310-47ad-a74d-63363c5c6181
 # ╟─922dfc20-4d14-4e8f-8b6d-639157828f1b
@@ -170,14 +181,13 @@ md"""
 # ╟─879a14f8-207c-4510-b94d-0e7f6f392175
 # ╠═488a4334-a776-4a49-a800-93b13dfbce49
 # ╟─ad2e8d1e-deac-4457-bfcb-dc256a32cdae
-# ╟─6b30f798-21b3-44f0-a8a0-c8f06da21b33
-# ╠═86bac24f-3c40-4df5-8de4-203aa117625f
-# ╠═7b36362f-2fe0-41d1-be46-852317d59b9c
-# ╠═4c9a0b66-d13a-45a0-a07c-0389f2054d1b
 # ╟─8a161348-be92-47cc-8e3c-62f74b8d96d2
 # ╟─3ba77924-33c1-4d47-8367-379766a58a95
 # ╠═105f8b1b-de30-4f98-986f-9b667b87949b
 # ╠═21dbad3b-86b2-43f7-912e-de5e794640d6
-# ╟─81d8681a-c99c-4be3-9398-f5ed528afd82
+# ╟─6b30f798-21b3-44f0-a8a0-c8f06da21b33
+# ╟─f0551a80-f208-470f-932a-7031e58b2d06
+# ╠═ebbe4d7f-9ab0-47f2-85e4-c0de7cb141c0
+# ╠═9e104891-fcb5-48fd-93a7-b2889381d2a6
 # ╟─dc85ce65-38a8-4990-86f5-ed6894b96695
 # ╠═4a085b76-da75-11ee-2b50-07309082fb46
