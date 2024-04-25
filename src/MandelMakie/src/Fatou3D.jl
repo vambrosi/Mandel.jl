@@ -14,28 +14,41 @@ struct Fatou3D <: AbstractViewer3D
     attractors::Vector{Vector{Point}}
 end
 
-function hue_from_fatou(component, n)
-    if n == 2
-        return component == 1 ? 30 : 270
-    else
-       return mod(360 * (component - 1) / n + 30, 360)
-    end
+function get_color(index, n)
+    n > 8 && return 40, mod(360 * (index - 1) / n + 30, 360)
+
+    #RGB CA736C 202 115 108 red
+    index == 1 && return 38.35791098655309, 29.49442824523494
+    #RGB 5794D0 87 148 208 blue
+    index == 2 && return 36.822489073365745, 266.89189631383687
+    #RGB 47A477 71 164 119 green
+    index == 3 && return 41.31205868565174, 158.3817555910295
+    #RGB 8D9741 141 151 65 yellow
+    index == 4 && return 46.2028504263141, 110.51854840517339
+    #RGB 00A2AF 0 162 175 cyan
+    index == 5 && return 34.439876883846594, 209.09162086774987
+    #RGB BC73A4 188 115 164 magenta
+    index == 6 && return 38.49553456026353, 338.47504267487597
+    #RGB BA823A 186 130 58 orange
+    index == 7 && return 48.58788683488929, 72.5301368954557
+    #RGB 9481CC 148 129 204 purple
+    index == 8 && return 43.17999997459473, 302.8931595387337
 end
 
-function color_from_fatou(fatou::FatouIterationDistance, n_fatou::Int, max_iter::Int)
+function color_from_fatou(fatou::FatouIterationDistance, n_fatou::Int)
     fatou.component_index == 0 && return LCHab(30, 0, 0)
 
     t = mod(fatou.preperiod / (fatou.period * 16), 2.0)
-    hue = hue_from_fatou(fatou.component_index, n_fatou)
+    chroma, hue = get_color(fatou.component_index, n_fatou)
 
-    return LCHab(20 * cospi(t) + 50, 40, hue)
+    return LCHab(20 * cospi(t) + 50, chroma, hue)
 end
 
 function update_fatou!(vertex_colors, vertices, f, c, mobius, post_critical_orbit_points, n_fatou)
     Threads.@threads for i in eachindex(vertices)
         pt = vector_to_point(normalize(vertices[i]); mobius=mobius)
         fatou = convergence_time(f, pt, c, post_critical_orbit_points, 1e-4, 200)
-        @inbounds vertex_colors[][i] = color_from_fatou(fatou, n_fatou, 200)
+        @inbounds vertex_colors[][i] = color_from_fatou(fatou, n_fatou)
     end
     notify(vertex_colors)
 end
@@ -90,7 +103,7 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
         scene,
         fatou_mesh,
         color=fatou_vertex_colors,
-        shading=NoShading,
+        shading=FastShading,
     )
 
     camera = Camera3D(
@@ -138,11 +151,13 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
 
     n_fatou = length(attractor_vectors)
     for (i, orbit) in enumerate(attractor_vectors)
-        scatter!(scene, orbit, color = LCHab(40, 40, hue_from_fatou(i, n_fatou)), glowwidth=2, glowcolor=:white)
+        chroma, hue = get_color(i, n_fatou)
+        scatter!(scene, orbit, color = LCHab(40, chroma, hue), glowwidth=2, glowcolor=:white)
     end
 
     for (i, trace) in enumerate(attractor_traces)
-        lines!(scene, trace, color = LCHab(40, 40, hue_from_fatou(i, n_fatou)), linewidth=2)
+        chroma, hue = get_color(i, n_fatou)
+        lines!(scene, trace, color = LCHab(40, chroma, hue), linewidth=2)
     end
 
     on(mobius) do M
