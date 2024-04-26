@@ -44,6 +44,12 @@ function point_to_vector(pt::Point; mobius::Mobius = id_mobius)
     return normalize(v)
 end
 
+function orthogonal_vector(v::Vec3f)
+    w = v + Vec3f(norm(v) * sign(v[1]), 0, 0)
+    B = I - 2 * w * w' / (w' * w)
+    return B[:, 2]
+end
+
 function update_colors!(vertex_colors, vertices, f_proj, c::Point, mobius, state)
     Threads.@threads for i in eachindex(vertices)
         pt = vector_to_point(normalize(vertices[i]); mobius=mobius)
@@ -201,7 +207,9 @@ function put_menu!(figure, view)
     on(resetbutton.clicks) do _
         focus = point_to_vector(view.focus[])
         view.mobius[] = id_mobius
-        update_cam!(view.scene.scene, 3 * focus, Vec3f(0, 0, 0))
+
+        v = orthogonal_vector(focus)
+        update_cam!(view.scene.scene, 3 * focus, Vec3f(0, 0, 0), v)
     end
 
     markbutton = Button(menu[1, 4], label="⋅", width=30)

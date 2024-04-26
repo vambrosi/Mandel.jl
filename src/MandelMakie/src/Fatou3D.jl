@@ -189,9 +189,11 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
     resetbutton = Button(menu[1, 3], label="↺", width=30)
 
     on(resetbutton.clicks) do _
-        focus_vector = point_to_vector(focus_point[])
+        f = 3 * point_to_vector(focus_point[])
         mobius[] = id_mobius
-        update_cam!(scene.scene, 3 * focus_vector, Vec3f(0, 0, 0))
+
+        v = orthogonal_vector(f)
+        update_cam!(scene.scene, f, Vec3f(0, 0, 0), v)
     end
 
     return Fatou3D(f, f_proj, figure, scene, camera, mobius, focus_point, attractor_points)
