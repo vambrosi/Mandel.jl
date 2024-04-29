@@ -125,6 +125,7 @@ function View3D(figure, f_proj, c, state; is_mandel, mark)
         colormap=:twilight,
         colorrange=(0.0, 1.0),
         shading=FastShading,
+        inspectable=false,
     )
 
     camera = Camera3D(
@@ -143,7 +144,7 @@ function View3D(figure, f_proj, c, state; is_mandel, mark)
 
     path_length = Observable{Int}(1)
     path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f_proj, $mark_point, $c, $path_length))
-    path_vectors = @lift(1.01 .* point_to_vector.($path_points; mobius=$inv_mobius))
+    path_vectors = @lift(1.001 .* point_to_vector.($path_points; mobius=$inv_mobius))
 
     trace = @lift begin
         segments = 20
@@ -151,16 +152,18 @@ function View3D(figure, f_proj, c, state; is_mandel, mark)
         for i in 2:$path_length
             v1 = $path_vectors[i - 1]
             v2 = $path_vectors[i]
-            trace[(i-2) * segments + 1 : (i-1) * segments] = 1.01 .* arc(v1, v2, segments)
+            trace[(i-2) * segments + 1 : (i-1) * segments] = 1.005 .*  arc(v1, v2, segments)
         end
 
         trace[end] = $path_vectors[end]
         return trace
     end
 
-    scatter!(scene, focus_vector, color=:red)
-    scatter!(scene, path_vectors, color=:blue, markersize = 12)
-    lines!(scene, trace, color=:blue, linewidth = 2)
+    scatter!(scene, focus_vector, color=:red, overdraw=true, marker='+', markersize=15, glowwidth=1, glowcolor=:white,
+        inspector_label=(self, i, p) -> string(to_complex(vector_to_point(normalize(p); mobius=mobius[]))))
+    scatter!(scene, path_vectors, color=:blue, glowwidth=2, glowcolor=:white,
+        inspector_label=(self, i, p) -> string(to_complex(vector_to_point(normalize(p); mobius=mobius[]))))
+    lines!(scene, trace, color=:blue, linewidth = 2, inspectable=false)
 
     return View3D(
         scene, camera, vertex_colors, mobius,
@@ -243,6 +246,8 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im)
     state = State(1e-4, 200)
     figure = Figure(size=(1000, 560))
 
+    DataInspector(figure)
+
     # Initialize Mandel and Julia Views
     mandel = View3D(
         figure[1, 1],
@@ -281,6 +286,7 @@ struct Julia3D <: AbstractViewer3D
     figure::Figure
     state::State
     julia::View3D
+    reset
 end
 
 function Julia3D(f::Function, parameter::Number=0.0im)
@@ -295,6 +301,8 @@ function Julia3D(f::Function, parameter::Number=0.0im)
     rational_map = RationalMap(g, 0.0im)
     state = State(1e-4, 200)
     figure = Figure(size=(500, 560))
+
+    DataInspector(figure)
 
     julia = View3D(
         figure[1, 1],
@@ -311,7 +319,7 @@ function Julia3D(f::Function, parameter::Number=0.0im)
     _, menu = put_menu!(figure[2, 1], julia)
     put_julia_menu!(menu, julia)
 
-    return Julia3D(rational_map, figure, state, julia)
+    return Julia3D(rational_map, figure, state, julia, contents(menu[1, 3])[1])
 end
 
 Base.show(io::IO, viewer::AbstractViewer3D) = display(GLMakie.Screen(), viewer.figure)

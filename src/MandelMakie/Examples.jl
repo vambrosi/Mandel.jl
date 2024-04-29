@@ -156,12 +156,44 @@ Fatou3D(f, -0.160129312880546 + 0.13705188507903926im)
   ╠═╡ =#
 
 # ╔═╡ 9e104891-fcb5-48fd-93a7-b2889381d2a6
-Fatou3D(g, 1.0im)
+# ╠═╡ disabled = true
+#=╠═╡
+Fatou3D(g, im)
+  ╠═╡ =#
 
 # ╔═╡ dc85ce65-38a8-4990-86f5-ed6894b96695
 md"""
 ## Instantiating Package
 """
+
+# ╔═╡ 0bbfff4b-7ee9-47f5-b19d-c97494438d4d
+md"""
+## Benchmarks
+"""
+
+# ╔═╡ 6e3d25a8-08a5-4e4d-a26c-6fce6623cef9
+# ╠═╡ disabled = true
+#=╠═╡
+fatou = Fatou3D(g, im)
+  ╠═╡ =#
+
+# ╔═╡ cab73282-0e64-45eb-958b-92f03fb4c8ca
+# ╠═╡ disabled = true
+#=╠═╡
+@time fatou.reset.clicks[] += 1
+  ╠═╡ =#
+
+# ╔═╡ acc7ac26-fe04-4da3-a329-aa8568bd72ef
+# ╠═╡ disabled = true
+#=╠═╡
+julia = Julia3D(g, im)
+  ╠═╡ =#
+
+# ╔═╡ 949646ca-3cf9-46b9-9f0d-ced29cd2740f
+# ╠═╡ disabled = true
+#=╠═╡
+@time julia.reset.clicks[] += 1
+  ╠═╡ =#
 
 # ╔═╡ Cell order:
 # ╟─1ba72fef-d5c4-4da4-9c17-4ba0096bf968
@@ -191,3 +223,8 @@ md"""
 # ╠═9e104891-fcb5-48fd-93a7-b2889381d2a6
 # ╟─dc85ce65-38a8-4990-86f5-ed6894b96695
 # ╠═4a085b76-da75-11ee-2b50-07309082fb46
+# ╟─0bbfff4b-7ee9-47f5-b19d-c97494438d4d
+# ╠═6e3d25a8-08a5-4e4d-a26c-6fce6623cef9
+# ╠═cab73282-0e64-45eb-958b-92f03fb4c8ca
+# ╠═acc7ac26-fe04-4da3-a329-aa8568bd72ef
+# ╠═949646ca-3cf9-46b9-9f0d-ced29cd2740f

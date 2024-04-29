@@ -12,6 +12,7 @@ struct Fatou3D <: AbstractViewer3D
     focus::Observable{Point}
 
     attractors::Vector{Vector{Point}}
+    reset
 end
 
 function get_color(index, n)
@@ -89,6 +90,8 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
     figure = Figure(size=(600, 650))
     scene = LScene(figure[1, 1], show_axis=false)
 
+    DataInspector(figure)
+
     rowsize!(figure.layout, 1, Aspect(1, 1))
     colgap!(figure.layout, 5)
 
@@ -104,6 +107,7 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
         fatou_mesh,
         color=fatou_vertex_colors,
         shading=FastShading,
+        inspectable=false,
     )
 
     camera = Camera3D(
@@ -117,11 +121,13 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
     focus_vector = @lift(normalize($(camera.eyeposition)))
     focus_point = @lift(vector_to_point($focus_vector; mobius=$mobius))
     focus_antipode_point = @lift(vector_to_point(- $focus_vector; mobius=$mobius))
-    scatter!(scene, focus_vector, color=:red)
+    scatter!(scene, focus_vector, color=:red, overdraw=true, marker='+', markersize=15, glowwidth=1, glowcolor=:white,
+        inspector_label=(self, i, p) -> string(to_complex(vector_to_point(normalize(p); mobius=mobius[]))))
 
     if show_critical_points
         critical_vectors = @lift(1.001 .* point_to_vector.(crit_pts; mobius=$inv_mobius))
-        scatter!(scene, critical_vectors, color=:green)
+        scatter!(scene, critical_vectors, color=:green, glowwidth=2, glowcolor=:white,
+            inspector_label=(self, i, p) -> string(to_complex(vector_to_point(normalize(p); mobius=mobius[]))))
     end
 
     attractor_points = get_attractors(f_proj, crit_pts, c)
@@ -152,12 +158,13 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
     n_fatou = length(attractor_vectors)
     for (i, orbit) in enumerate(attractor_vectors)
         chroma, hue = get_color(i, n_fatou)
-        scatter!(scene, orbit, color = LCHab(40, chroma, hue), glowwidth=2, glowcolor=:white)
+        scatter!(scene, orbit, color = LCHab(40, chroma, hue), glowwidth=2, glowcolor=:white,
+            inspector_label=(self, i, p) -> string(to_complex(vector_to_point(normalize(p); mobius=mobius[]))))
     end
 
     for (i, trace) in enumerate(attractor_traces)
         chroma, hue = get_color(i, n_fatou)
-        lines!(scene, trace, color = LCHab(40, chroma, hue), linewidth=2)
+        lines!(scene, trace, color = LCHab(40, chroma, hue), linewidth=2, inspectable=false)
     end
 
     on(mobius) do M
@@ -196,5 +203,5 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
         update_cam!(scene.scene, f, Vec3f(0, 0, 0), v)
     end
 
-    return Fatou3D(f, f_proj, figure, scene, camera, mobius, focus_point, attractor_points)
+    return Fatou3D(f, f_proj, figure, scene, camera, mobius, focus_point, attractor_points, resetbutton)
 end
