@@ -15,7 +15,10 @@ struct Fatou3D <: AbstractViewer3D
     reset
 end
 
+grad = convert.(LCHab, cgrad(:twilight))
+
 function get_color(index, n)
+    n == 1 && return grad[255].c, grad[255].h
     n > 8 && return 40, mod(360 * (index - 1) / n + 30, 360)
 
     #RGB CA736C 202 115 108 red
@@ -37,6 +40,12 @@ function get_color(index, n)
 end
 
 function color_from_fatou(fatou::FatouIterationDistance, n_fatou::Int)
+    if n_fatou == 1
+        fatou.component_index == 0 && return grad[255]
+        depth = mod1(16 * fatou.preperiod ÷ fatou.period, 510)
+        return grad[depth]
+    end
+
     fatou.component_index == 0 && return LCHab(30, 0, 0)
 
     t = mod(fatou.preperiod / (fatou.period * 16), 2.0)
@@ -149,7 +158,7 @@ function Fatou3D(f::Function, c::Number=0.0im; show_critical_points=false)
                 trace[(start_index-1) * segments + 1 : (start_index) * segments] = 1.005 .* arc(v1, v2, segments)
             end
 
-            trace[end] = $vectors[1]
+            !isempty($vectors) && (trace[end] = $vectors[1])
             return trace
         end
         push!(attractor_traces, trace)
