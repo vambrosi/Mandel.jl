@@ -20,8 +20,8 @@ function to_complex(view::View, point)
 	x,  y = point[1], point[2]
 
 	ppu = view.pixels / view.diameter
-	a = ((x - 0.5) - view.pixels / 2) / ppu
-	b = ((y - 0.5) - view.pixels / 2) / ppu
+	a = (x + 0.5 - view.pixels / 2) / ppu
+	b = (y + 0.5 - view.pixels / 2) / ppu
 
 	return view.center + complex(a, b)
 end
@@ -30,8 +30,8 @@ function to_image_coords(view::View, z::Number)
 	ppu = view.pixels / view.diameter
 	w = z - view.center
 
-	x = real(w) * ppu + 0.5 + view.pixels / 2
-	y = imag(w) * ppu + 0.5 + view.pixels / 2
+	x = real(w) * ppu - 0.5 + view.pixels / 2
+	y = imag(w) * ppu - 0.5 + view.pixels / 2
 
 	return [x, y]
 end
@@ -43,8 +43,8 @@ function to_image_coords(view::View, zs::Vector{<:Number})
 
 	for z in zs
 		w = z - view.center
-		push!(xs, real(w) * ppu + 0.5 + view.pixels / 2)
-		push!(ys, imag(w) * ppu + 0.5 + view.pixels / 2)
+		push!(xs, real(w) * ppu - 0.5 + view.pixels / 2)
+		push!(ys, imag(w) * ppu - 0.5 + view.pixels / 2)
 	end
 
 	return xs, ys
@@ -53,9 +53,8 @@ end
 function prepare!(view::View)
 	hidedecorations!(view.axis)
 	hidespines!(view.axis)
-	deactivate_interaction!(view.axis, :rectanglezoom)
-	deactivate_interaction!(view.axis, :scrollzoom)
-	deactivate_interaction!(view.axis, :dragpan)
+	deregister_interaction!(view.axis, :rectanglezoom)
+	deregister_interaction!(view.axis, :dragpan)
 
 	plt = heatmap!(
 		view.axis,
@@ -136,6 +135,9 @@ end
 
 	inspectable::Observable{Any} = Observable{Any}(false)
 
+	is_zooming::Bool = false
+	zooming::Timer = Timer(identity, 0.1)
+
 	function MandelView(args...)
 		view = new(args...)
 		prepare!(view)
@@ -161,6 +163,9 @@ end
 		Observable(ComplexF64[])
 
 	inspectable::Observable{Any} = Observable{Any}(false)
+
+	is_zooming::Bool = false
+	zooming::Timer = Timer(identity, 0.1)
 
 	function JuliaView(args...)
 		view = new(args...)
@@ -282,40 +287,20 @@ function update_view!(view::View, d_system::DynamicalSystem, options::ViewerOpti
 	return view
 end
 
-function centering!(
+function zoom!(
 	view::View,
 	d_system::DynamicalSystem,
 	options::ViewerOptions,
-	point
+	fixed_point,
+	factor::Real,
 )
-	view.center = to_complex(view, point)
-	update_view!(view, d_system, options)
-	return view
-end
+	t = 1 / factor
+	z = to_complex(view, fixed_point)
 
-function zoom_in!(
-	view::View,
-	d_system::DynamicalSystem,
-	options::ViewerOptions,
-	point,
-)
-	z = to_complex(view, point)
-	view.center = 0.5 * view.center + 0.5 * z
-	view.diameter /= 2.0
+	view.center = (1 - t) * z + t * view.center
+	view.diameter /= factor
 	update_view!(view, d_system, options)
-	return view
-end
 
-function zoom_out!(
-	view::View,
-	d_system::DynamicalSystem,
-	options::ViewerOptions,
-	point,
-)
-	z = to_complex(view, point)
-	view.center = 2.0 * view.center - z
-	view.diameter *= 2.0
-	update_view!(view, d_system, options)
 	return view
 end
 
@@ -326,7 +311,7 @@ function pick_parameter!(
 	options::ViewerOptions,
 	point,
 )
-	julia.parameter = to_complex(mandel, point)
+	julia.parameter = point
 
 	julia.marks[] = orbit(
 		d_system.f,
@@ -370,6 +355,7 @@ function reset!(
 	view.center = view.init_center
 	view.diameter = view.init_diameter
 	update_view!(view, d_system, options)
+	reset_limits!(view.axis)
 	return view
 end
 
@@ -378,7 +364,6 @@ function add_view_buttons(
 	view::View,
 	d_system::DynamicalSystem,
 	options::ViewerOptions,
-	pressed::Bool,
 )
 	buttons = GridLayout(
 		position,
@@ -391,22 +376,92 @@ function add_view_buttons(
 
 	save_button = Button(buttons[1, 2], label="Save")
 
-	on(save_button.clicks, priority=200) do event
+	on(save_button.clicks, priority=300) do event
 		format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
 		time = string(Dates.format(Dates.now(), format))
-		save_view(time * ".png", view)
-		pressed = true
-		return Consume(true)
+		!isdir("imgs") && mkdir("imgs")
+		save_view("imgs/" * time * ".png", view)
+		return Consume(false)
 	end
 
 	reset_button = Button(buttons[1, 3], label="Reset")
 
-	on(reset_button.clicks, priority=200) do event
-		reset!(view, d_system, options)
-		pressed = true
-		return Consume(true)
+	on(reset_button.clicks, priority=300) do event
+		if !view.is_zooming
+			reset!(view, d_system, options)
+		end
+
+		return Consume(false)
+	end
+end
+
+function add_view_events(view::View, other::View, d_system::DynamicalSystem, options::ViewerOptions)
+	dragging = Ref(false)
+	dragstart = Ref(Point2f(0.0))
+	dragend = Ref(Point2f(0.0))
+	to_world_at_start = z -> to_world(view.axis.scene, z)
+
+	on(events(view.axis.scene).mousebutton) do event
+		mp = mouseposition_px(view.axis.scene)
+
+		if event.button == Mouse.right
+			if event.action == Mouse.press && is_mouseinside(view.axis)
+				dragging[] = true
+				to_world_at_start = z -> to_world(view.axis.scene, z)
+				dragstart[] = to_world_at_start(mp)
+
+			elseif event.action == Mouse.release && dragging[]
+				dragend[] = to_world_at_start(mp)
+				view.center += to_complex(view, dragstart[]) - to_complex(view, dragend[])
+				translate!(view.axis.scene, Point2(0))
+				update_view!(view, d_system, options)
+				reset_limits!(view.axis)
+				dragging[] = false
+			end
+		end
+
+		if event.button == Mouse.left
+			if event.action == Mouse.press && is_mouseinside(view.axis)
+				point = to_complex(view, to_world_at_start(mp))
+				if view isa MandelView
+					pick_parameter!(other, view, d_system, options, point)
+				elseif view isa JuliaView
+					pick_orbit!(view, d_system, options, point)
+				end
+			end
+		end
 	end
 
+	on(events(view.axis.scene).mouseposition) do event
+		if dragging[]
+			mp = mouseposition_px(view.axis.scene)
+			translate!(view.axis.scene, to_world_at_start(mp) - dragstart[])
+		end
+	end
+
+	on(events(view.axis.scene).scroll, priority=100) do event
+		if is_mouseinside(view.axis) && !view.is_zooming
+			close(view.zooming)
+			view.zooming = Timer(_ -> let
+				view.is_zooming = true
+
+				x_min, x_max, _, _ = view.axis.limits[]
+				original_size = x_max - x_min
+				x1_min, x1_max = view.axis.xaxis.attributes.limits[]
+				current_size = x1_max - x1_min
+
+				scale = current_size / original_size
+				point = mouseposition(view.axis.scene)
+				z = to_complex(view, point)
+
+				view.diameter *= scale
+				view.center = scale * view.center + (1 - scale) * z
+				update_view!(view, d_system, options)
+				reset_limits!(view.axis)
+				view.is_zooming = false
+			end, 0.1)
+		end
+	end
 end
 
 struct Viewer
@@ -436,18 +491,18 @@ struct Viewer
 
         d_system = DynamicalSystem(f, crit)
 		options = ViewerOptions(100.0, 200, 1, 1, algs[coloring_algorithm])
-		state = ViewerState(:pick)
+		state = ViewerState(:zoom)
 		figure = Figure(figure_padding=10, size=(900, 510))
 
 		mandel = MandelView(
-			axis = Axis(figure[1, 1][1, 1], aspect=AxisAspect(1)),
+			axis = Axis(figure[1, 1][1, 1], aspect=AxisAspect(1), limits = (0.5, 1000.5, 0.5, 1000.5)),
 			center = mandel_center,
 			diameter = mandel_diam,
 			pixels = 1000,
 		)
 
 		julia = JuliaView(
-			axis = Axis(figure[1, 1][1, 2], aspect=AxisAspect(1)),
+			axis = Axis(figure[1, 1][1, 2], aspect=AxisAspect(1), limits = (0.5, 1000.5, 0.5, 1000.5)),
 			center = julia_center,
 			diameter = julia_diam,
 			parameter = c,
@@ -473,45 +528,38 @@ struct Viewer
 		rowsize!(figure.layout, 1, Aspect(1, 0.5))
 		colgap!(content(figure[1,1]), 10)
 
-		axis_pressed = false
 		plots = figure[1, 1]
-		add_view_buttons(plots[1, 1], mandel, d_system, options, axis_pressed)
-		add_view_buttons(plots[1, 2], julia, d_system, options, axis_pressed)
-
-		buttons = Dict(
-			:centering => Button(figure[2,1][1,1], label="Choose\nCenter"),
-			:zoom => Button(figure[2,1][1,2], label="Click\nZoom"),
-			:pick => Button(figure[2,1][1,3], label="Choose\nPoint"),
-		)
+		add_view_buttons(plots[1, 1], mandel, d_system, options)
+		add_view_buttons(plots[1, 2], julia, d_system, options)
 
 		labels = Dict(
-			:max_iter => Label(figure[2,1][1,4], "Maximum\nIterations:"),
-			:orbit_len => Label(figure[2,1][1,6], "Orbit\nLength:"),
-			:crit_len => Label(figure[2,1][1,8], "Critical Point\nOrbit Length:"),
-			:esc_radius => Label(figure[2,1][1,10], "Escape\nRadius:"),
+			:max_iter => Label(figure[2,1][1,1], "Maximum\nIterations:"),
+			:orbit_len => Label(figure[2,1][1,3], "Orbit\nLength:"),
+			:crit_len => Label(figure[2,1][1,5], "Critical Point\nOrbit Length:"),
+			:esc_radius => Label(figure[2,1][1,7], "Escape\nRadius:"),
 		)
 
 		input_fields = Dict(
 			:max_iter => Textbox(
-				figure[2,1][1,5],
+				figure[2,1][1,2],
 				width = 60,
 				placeholder = string(options.max_iter),
 				validator = Int,
 			),
 			:orbit_len => Textbox(
-				figure[2,1][1,7],
+				figure[2,1][1,4],
 				width = 60,
 				placeholder = string(options.orbit_len),
 				validator = Int,
 			),
 			:crit_len => Textbox(
-				figure[2,1][1,9],
+				figure[2,1][1,6],
 				width = 60,
 				placeholder = string(options.orbit_len),
 				validator = Int,
 			),
 			:esc_radius => Textbox(
-				figure[2,1][1,11],
+				figure[2,1][1,8],
 				width = 60,
 				placeholder = string(options.esc_radius),
 				validator = Float64,
@@ -550,89 +598,8 @@ struct Viewer
 			update_view!(mandel, d_system, options)
 		end
 
-		button_non_active_color = buttons[:centering].buttoncolor[]
-		label_non_active_color = buttons[:centering].labelcolor[]
-		button_active_color = buttons[:centering].buttoncolor_active[]
-		label_active_color = buttons[:centering].labelcolor_active[]
-
-		buttons[state.last_button].buttoncolor[] = button_active_color
-		buttons[state.last_button].labelcolor[] = label_active_color
-
-		for (symbol, button1) in buttons
-			on(button1.clicks) do n
-				state.last_button = symbol
-
-				mandel.inspectable[] = state.last_button == :pick
-				julia.inspectable[] = state.last_button == :pick
-
-				for (_, button2) in buttons
-					button2.buttoncolor[] = button_non_active_color
-					button2.labelcolor[] = label_non_active_color
-				end
-				button1.buttoncolor[] = button_active_color
-				button1.labelcolor[] = label_active_color
-			end
-		end
-
-		for view in [mandel, julia]
-			scene = view.axis.scene
-			axis = view.axis
-
-			on(events(scene).mousebutton) do event
-				if axis_pressed
-					axis_pressed = false
-					return Consume(false)
-				end
-
-				point = mouseposition(scene)
-		        if event.button == Mouse.left && is_mouseinside(axis)
-		            if event.action == Mouse.press
-						if state.last_button == :zoom
-							zoom_in!(view, d_system, options, point)
-						elseif state.last_button == :centering
-							centering!(view, d_system, options, point)
-						end
-					end
-				elseif event.button == Mouse.right && is_mouseinside(axis)
-					if event.action == Mouse.press && state.last_button == :zoom
-						zoom_out!(view, d_system, options, point)
-					end
-				end
-				return Consume(false)
-			end
-		end
-
-		on(events(mandel.axis.scene).mousebutton) do event
-			if axis_pressed
-				axis_pressed = false
-				return Consume(false)
-			end
-
-			point = mouseposition(mandel.axis.scene)
-			if event.button == Mouse.left && is_mouseinside(mandel.axis)
-				if event.action == Mouse.press && state.last_button == :pick
-					pick_parameter!(julia, mandel, d_system, options, point)
-				end
-			end
-
-			return Consume(false)
-		end
-
-		on(events(julia.axis.scene).mousebutton) do event
-			if axis_pressed
-				axis_pressed = false
-				return Consume(false)
-			end
-
-			point = mouseposition(julia.axis.scene)
-			if event.button == Mouse.left && is_mouseinside(julia.axis)
-				if event.action == Mouse.press && state.last_button == :pick
-					pick_orbit!(julia, d_system, options, to_complex(julia, point))
-				end
-			end
-
-			return Consume(false)
-		end
+		add_view_events(mandel, julia, d_system, options)
+		add_view_events(julia, mandel, d_system, options)
 
 		return new(d_system, options, figure, mandel, julia)
 	end

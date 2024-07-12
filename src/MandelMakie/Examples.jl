@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.41
+# v0.19.43
 
 using Markdown
 using InteractiveUtils
@@ -48,10 +48,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-# ╠═╡ disabled = true
-#=╠═╡
-Viewer(f; crit=crit, mandel_diam=1.0)
-  ╠═╡ =#
+viewer = Viewer(f; crit=crit, mandel_diam=1.0)
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true
@@ -91,7 +88,7 @@ The `coloring` parameter in `Viewer` picks the coloring algorithm used in both t
 # ╔═╡ 9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer((z,c) -> z^2 + c; coloring_algorithm=:escape_preperiod)
+Viewer((z,c) -> z^2 + c; mandel_center=-0.5, coloring_algorithm=:escape_preperiod)
   ╠═╡ =#
 
 # ╔═╡ 879a14f8-207c-4510-b94d-0e7f6f392175
