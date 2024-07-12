@@ -287,19 +287,23 @@ function update_view!(view::View, d_system::DynamicalSystem, options::ViewerOpti
 	return view
 end
 
-function zoom!(
-	view::View,
-	d_system::DynamicalSystem,
-	options::ViewerOptions,
-	fixed_point,
-	factor::Real,
-)
-	t = 1 / factor
-	z = to_complex(view, fixed_point)
+function zoom!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
+	view.is_zooming = true
 
-	view.center = (1 - t) * z + t * view.center
-	view.diameter /= factor
+	x_min, x_max, _, _ = view.axis.limits[]
+	original_size = x_max - x_min
+	x1_min, x1_max = view.axis.xaxis.attributes.limits[]
+	current_size = x1_max - x1_min
+
+	scale = current_size / original_size
+	point = mouseposition(view.axis.scene)
+	z = to_complex(view, point)
+
+	view.diameter *= scale
+	view.center = scale * view.center + (1 - scale) * z
 	update_view!(view, d_system, options)
+	reset_limits!(view.axis)
+	view.is_zooming = false
 
 	return view
 end
@@ -442,24 +446,7 @@ function add_view_events(view::View, other::View, d_system::DynamicalSystem, opt
 	on(events(view.axis.scene).scroll, priority=100) do event
 		if is_mouseinside(view.axis) && !view.is_zooming
 			close(view.zooming)
-			view.zooming = Timer(_ -> let
-				view.is_zooming = true
-
-				x_min, x_max, _, _ = view.axis.limits[]
-				original_size = x_max - x_min
-				x1_min, x1_max = view.axis.xaxis.attributes.limits[]
-				current_size = x1_max - x1_min
-
-				scale = current_size / original_size
-				point = mouseposition(view.axis.scene)
-				z = to_complex(view, point)
-
-				view.diameter *= scale
-				view.center = scale * view.center + (1 - scale) * z
-				update_view!(view, d_system, options)
-				reset_limits!(view.axis)
-				view.is_zooming = false
-			end, 0.1)
+			view.zooming = Timer(_ -> zoom!(view, d_system, options), 0.1)
 		end
 	end
 end
