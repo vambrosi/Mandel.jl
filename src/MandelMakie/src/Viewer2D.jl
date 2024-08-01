@@ -500,7 +500,7 @@ function add_frame_events!(
 
 	on(events(scene).scroll, priority=100) do event
 		if is_mouseinside(axis) && !is_zooming &&
-				(is_topframe || is_mouseinside(topframe.axis))
+				(is_topframe || !is_mouseinside(topframe.axis))
 			close(zooming)
 			zooming = Timer(_ -> zoom!(frame, d_system, options), 0.1)
 		end
@@ -653,7 +653,7 @@ struct Viewer
 
         d_system = DynamicalSystem(f, crit)
 		options = Options(100.0, 200, 1, 1, compact_view, algs[coloring_algorithm])
-		figure = Figure(figure_padding=10, size=(800, 750))
+		figure = Figure(figure_padding=10, size=(750, 650))
 
 		mandel = MandelView(
 			center = mandel_center, diameter = mandel_diameter, pixels = 1000
