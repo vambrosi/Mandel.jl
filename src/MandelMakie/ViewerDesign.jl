@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.43
+# v0.19.45
 
 using Markdown
 using InteractiveUtils
@@ -7,149 +7,370 @@ using InteractiveUtils
 # ╔═╡ 14e6fdac-460d-11ef-2cd0-9d0a03e4fe10
 using GLMakie
 
+# ╔═╡ c5928b33-9032-4b7c-a4c8-ac8821399e15
+function escape_time(z0::Number, c::Number)
+    z = z0
+
+    for iter in 1:200
+        z = z^2 + c
+
+        if abs(z) > 100.0
+            return mod((iter + 1.0 - log2(log(abs(z)))) / 64.0, 1.0)
+        end
+    end
+
+    return 0.5
+end
+
+# ╔═╡ 0bd59fb9-06f8-41a1-992c-96c39801e283
+function to_complex(view, point)
+	x,  y = point[1], point[2]
+
+	upp = view.diameter / view.pixels
+	a = (x - 0.5 - 0.5 * view.pixels) * upp
+	b = (y - 0.5 - 0.5 * view.pixels) * upp
+
+	return view.center + complex(a, b)
+end
+
 # ╔═╡ edebc0cd-0549-41f6-814d-d764ff455624
-mutable struct ViewerState
-    is3D::Bool
-	is_mandel_inset::Bool
+mutable struct State
     compact_view::Bool
 end
 
+# ╔═╡ d1edd0b7-6e66-4e9b-9a2f-117049df1316
+struct Frame
+	axis::Axis
+	view::Ref{Any}
+	events::Dict{Symbol, Any}
+end
+
 # ╔═╡ c5744a65-e2d1-413f-9ed4-9f7cf93b31cb
-struct MandelView
+mutable struct MandelView
+	center::ComplexF64
+	diameter::Float64
+	pixels::Int
+
+	init_center::ComplexF64
+	init_diameter::Float64
+	array::Observable{Matrix{Float64}}
+
+	function MandelView(center, diameter, pixels)
+		array = Observable(zeros(Float64, pixels, pixels))
+		view = new(center, diameter, pixels, center, diameter, array)
+		return view
+	end
+end
+
+# ╔═╡ c815751e-737f-4ac2-9e6f-dee774eadee8
+function update!(view::MandelView)
+	array = view.array[]
+	width, height = size(array)
+
+	step = view.diameter / view.pixels
+	δ = 0.5 * view.diameter + 0.5 * step
+	corner = view.center - complex(δ, δ)
+
+	Threads.@threads for j in 1:width
+		for i in 1:height
+			c = corner + step * complex(i, j)
+			@inbounds array[i, j] = escape_time(0.0im, c)
+		end
+	end
+	notify(view.array)
 end
 
 # ╔═╡ 872f50d1-7696-494d-8652-ac9c980981e8
-struct JuliaView
+mutable struct JuliaView
+	center::ComplexF64
+	diameter::Float64
+	parameter::ComplexF64
+	pixels::Int
+
+	init_center::ComplexF64
+	init_diameter::Float64
+	array::Observable{Matrix{Float64}}
+
+	function JuliaView(center, diameter, parameter, pixels)
+		array = Observable(zeros(Float64, pixels, pixels))
+		view = new(center, diameter, parameter, pixels, center, diameter, array)
+		return view
+	end
 end
 
-# ╔═╡ 0f175eca-78f4-49ee-be40-c86083f50c22
+# ╔═╡ f0456fd9-d9e8-4ffd-91a4-4c7751745ac2
+function update!(view::JuliaView)
+	array = view.array[]
+	width, height = size(array)
+
+	step = view.diameter / view.pixels
+	δ = 0.5 * view.diameter + 0.5 * step
+	corner = view.center - complex(δ, δ)
+
+	Threads.@threads for j in 1:width
+		for i in 1:height
+			z = corner + step * complex(i, j)
+			@inbounds array[i, j] = escape_time(z, view.parameter)
+		end
+	end
+	notify(view.array)
+end
+
+# ╔═╡ 673dba4f-3fa6-497b-89f8-d5b1ed8fe022
 View = Union{MandelView, JuliaView}
 
 # ╔═╡ 36bb9bd9-a7e2-4b82-bffe-4f440d603b45
-function create_plot!(axis, view::MandelView)
-	empty!(axis)
-	lines!(
-		axis, 
-		[Point2f(0,0), Point2f(0,2), Point2f(1,1), Point2f(2,2), Point2f(2,0)]
-	)
-end
+function create_plot!(viewaxis)
+	empty!(viewaxis.axis)
+	view = viewaxis.view[]
 
-# ╔═╡ 64396304-ca05-40ce-9e88-4aa6e07d58e1
-function create_plot!(axis, view::JuliaView)
-	empty!(axis)
-	lines!(
-		axis, 
-		[Point2f(0,0), Point2f(1,0), Point2f(1,2), Point2f(0,2), Point2f(2,2)]
+	plt = heatmap!(
+		viewaxis.axis,
+		view.array,
+		colormap = (:twilight, 1.0),
+		colorrange = (0.0, 1.0),
+		inspectable = false,
 	)
 end
 
 # ╔═╡ 9cadee68-e2d6-4781-a773-3b7cddb33d70
-const bg_color = RGBf(0.94, 0.94, 0.94);
+const bg_color = RGBf(0.8, 0.8, 0.8);
+
+# ╔═╡ 4d8a42fd-c700-4e91-abf0-1279af3b057a
+function translate_axis!(axis, z)
+	translate!(axis.scene, 0, 0, z)
+	translate!(axis.elements[:background], 0, 0, z-1)
+	translate!(axis.elements[:xoppositeline], 0, 0, z+1)
+	translate!(axis.elements[:yoppositeline], 0, 0, z+1)
+	translate!(axis.xaxis.elements[:axisline], 0, 0, z+1)
+	translate!(axis.yaxis.elements[:axisline], 0, 0, z+1)
+end
 
 # ╔═╡ 5685eb81-e881-419a-9579-ecf60d838eca
-function create_axes!(figure, compact_view)
+function create_axes!(figure, compact_view, mandel, julia)
+	mandel_limits = (0.5, 0.5 + mandel.pixels, 0.5, 0.5 + mandel.pixels)
+	julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
 	if compact_view
-		left_small_axis = Axis(
+		left_axis = Axis(
 			figure[1,1][1,1],
 			width = Relative(0.3),
 			height = Relative(0.3),
-			valign = 0.01,
-			halign = 0.01,
+			valign = 0.025,
+			halign = 0.025,
 			aspect = 1,
+			limits = mandel_limits,
 		)
-		translate!(left_small_axis.scene, 0, 0, 10)
-		translate!(left_small_axis.elements[:background], 0, 0, 9)
-
-		right_large_axis = Axis(figure[1,1][1,1], aspect = 1)
+		
+		right_axis = Axis(figure[1,1][1,1], aspect = 1, limits = julia_limits)
 	else
-		left_small_axis = Axis(figure[1,1][1,1], aspect = 1)
-		right_large_axis = Axis(figure[1,1][1,2], aspect = 1)
+		left_axis = Axis(figure[1,1][1,1], aspect = 1, limits = mandel_limits)
+		right_axis = Axis(figure[1,1][1,2], aspect = 1, limits = julia_limits)
 	end
+	translate_axis!(left_axis, 10)
+	translate_axis!(right_axis, 0)
 
-	for axis in [left_small_axis, right_large_axis]
+	for axis in [left_axis, right_axis]
 		hidedecorations!(axis)
-		hidespines!(axis)
 		deregister_interaction!(axis, :rectanglezoom)
+		deregister_interaction!(axis, :dragpan)
 	end
 
-	return left_small_axis, right_large_axis
+	return Frame(left_axis, mandel, Dict()), Frame(right_axis, julia, Dict())
+end
+
+# ╔═╡ 0e662e66-cdbe-426d-bc1b-d89a6ac0b3ff
+function add_buttons!(figure, frames, state)
+	layout = GridLayout(figure[2,1])
+
+	switch_layout = Button(layout[1,1], label="↰", halign=:left)
+	switch_positions = Button(layout[1,2], label="↔", halign=:left)
+	filler = Label(layout[1,3], "", tellwidth = false)
+
+	on(switch_layout.clicks, priority=300) do event
+		if state.compact_view
+			frames[1].axis.width = nothing
+			frames[1].axis.height = nothing
+			frames[1].axis.valign = :center
+			frames[1].axis.halign = :center
+
+			figure[1, 1][1, 1] = frames[1].axis
+			figure[1, 1][1, 2] = frames[2].axis
+
+			switch_layout.label = "↳"
+		else
+			frames[1].axis.width = Relative(0.3)
+			frames[1].axis.height = Relative(0.3)
+			frames[1].axis.valign = 0.01
+			frames[1].axis.halign = 0.01
+
+			figure[1, 1][1, 1] = frames[1].axis
+			figure[1, 1][1, 1] = frames[2].axis
+
+			trim!(contents(figure[1,1])...)
+			switch_layout.label = "↰"
+		end
+		state.compact_view = !state.compact_view
+	end
+
+	on(switch_positions.clicks, priority=300) do event
+		frames[1].view[], frames[2].view[] =
+			frames[2].view[], frames[1].view[]
+		create_plot!(frames[1])
+		create_plot!(frames[2])
+	end
+
+end
+
+# ╔═╡ 6ba1207f-7f5c-4527-8e50-c79474f25588
+function zoom!(frame)
+	frame.events[:is_zooming] = true
+	view = frame.view[]
+
+	original_size = view.pixels
+	x1_min, x1_max = frame.axis.xaxis.attributes.limits[]
+	current_size = x1_max - x1_min
+
+	scale = current_size / original_size
+	point = mouseposition(frame.axis.scene)
+	z = to_complex(view, point)
+
+	view.diameter *= scale
+	view.center = scale * view.center + (1 - scale) * z
+	update!(view)
+	reset_limits!(frame.axis)
+	frame.events[:is_zooming] = false
+
+	return nothing
+end
+
+# ╔═╡ 9d42be82-efea-443d-b249-885c5707a139
+begin
+	function pick_mark!(mandel::MandelView, julia::JuliaView, z)
+		julia.parameter = z
+		update!(julia)
+	end
+
+	function pick_mark!(julia::JuliaView, mandel::MandelView, z)
+		return nothing
+	end
+end
+
+# ╔═╡ 2a0f609d-694b-4ee0-8585-49f296d6f955
+function reset!(view::View)
+	view.center = view.init_center
+	view.diameter = view.init_diameter
+	update!(view)
+end
+
+# ╔═╡ eff07449-30fd-43d9-a7ae-1b8c9280c62a
+function add_events!(frames)
+	for (i, frame) in enumerate(frames)
+		frame.events[:dragging] = false
+		frame.events[:dragstart] = Point2f(0.0)
+		frame.events[:dragend] = Point2f(0.0)
+		frame.events[:dragcoords] = z -> to_world(frame.axis.scene, z)
+		frame.events[:is_zooming] = false
+		frame.events[:zooming] = Timer(identity, 0.1)
+		scene_z = i == 1 ? 10 : 0
+
+		on(events(frame.axis.scene).mousebutton) do event
+			mp = mouseposition_px(frame.axis.scene)
+
+			if event.button == Mouse.right
+				if event.action == Mouse.press && is_mouseinside(frame.axis) && 
+				!frame.events[:dragging] && 
+				(i == 1 || !is_mouseinside(frames[1].axis))
+					frame.events[:dragging] = true
+					frame.events[:dragcoords] = z -> to_world(frame.axis.scene, z)
+					frame.events[:dragstart] = frame.events[:dragcoords](mp)
+	
+				elseif event.action == Mouse.release && frame.events[:dragging]
+					frame.events[:dragend] = frame.events[:dragcoords](mp)
+					frame.view[].center += 
+						to_complex(frame.view[], frame.events[:dragstart]) -
+						to_complex(frame.view[], frame.events[:dragend])
+					update!(frame.view[])
+					translate!(frame.axis.scene, 0, 0, scene_z)
+					reset_limits!(frame.axis)
+					frame.events[:dragging] = false
+				end
+			end
+			
+			if event.button == Mouse.left
+				if event.action == Mouse.press && is_mouseinside(frame.axis) &&
+				(i == 1 || !is_mouseinside(frames[1].axis))
+					z = to_complex(frame.view[], frame.events[:dragcoords](mp))
+					view1, view2 = frames[i].view[], frames[mod1(i+1, 2)].view[]
+					pick_mark!(view1, view2, z)
+				end
+			end
+		end
+
+		on(events(frame.axis.scene).mousebutton, priority = 2) do event
+		    if event.button == Mouse.left && event.action == Mouse.press && 
+			is_mouseinside(frame.axis) && (i == 1 || !is_mouseinside(frames[1].axis))
+		        if Keyboard.left_control in events(frame.axis.scene).keyboardstate
+		        	reset!(frame.view[])
+					return Consume(true)
+		        end
+		    end
+		    return Consume(false)
+		end
+
+		on(events(frame.axis.scene).mouseposition) do event
+			if frame.events[:dragging]
+				mp = mouseposition_px(frame.axis.scene)
+				x, y = frame.events[:dragcoords](mp) - frame.events[:dragstart]
+				translate!(frame.axis.scene, x, y, scene_z)
+			end
+		end
+
+		on(events(frame.axis.scene).scroll, priority=100) do event
+			if is_mouseinside(frame.axis) && !frame.events[:is_zooming]
+				close(frame.events[:zooming])
+				frame.events[:zooming] = Timer(_ -> zoom!(frame), 0.1)
+			end
+		end
+	end
 end
 
 # ╔═╡ f927a520-1b50-4358-9c23-e5cd3ce53ddb
 begin
 	struct Viewer
 	    figure::Figure
-	    state::ViewerState
+	    state::State
 	    mandel::Union{Nothing, View}
 		julia::View
+		frames::Tuple{Frame, Frame}
 	end
 
 	function Viewer(; compact_view=true)
 		figure = Figure(size = (650,500), backgroundcolor=bg_color)
-	    state = ViewerState(false, true, compact_view)
+		mandel = MandelView(-0.5, 4.0, 1000)
+		julia = JuliaView(0.0im, 4.0, 1.0im, 1000)
+		state = State(compact_view)
 
-		mandel = MandelView()
-		julia = JuliaView()
+		frames = create_axes!(figure, state.compact_view, mandel, julia)
+		create_plot!(frames[1])
+		create_plot!(frames[2])
 
-		left_small_axis, right_large_axis = create_axes!(figure, state.compact_view)
-		
-		create_plot!(left_small_axis, mandel)
-		create_plot!(right_large_axis, julia)
+		update!(mandel)
+		update!(julia)
 
-		switch_layout = Button(figure[2,1][1,1], label="↰", tellwidth = false, halign=:left)
-		switch_view_positions = Button(figure[2,1][1,2], label="↔", tellwidth = false, halign=:left)
-
-		on(switch_layout.clicks, priority=300) do event
-			if state.compact_view				
-				left_small_axis.width = nothing
-				left_small_axis.height = nothing
-				left_small_axis.valign = :center
-				left_small_axis.halign = :center
-				
-				figure[1, 1][1, 1] = left_small_axis
-				figure[1, 1][1, 2] = right_large_axis
-				translate!(left_small_axis.scene, 0, 0, 1)
-				translate!(left_small_axis.elements[:background], 0, 0, 0)
-				
-				switch_layout.label = "↳"
-			else				
-				left_small_axis.width = Relative(0.3)
-				left_small_axis.height = Relative(0.3)
-				left_small_axis.valign = 0.01
-				left_small_axis.halign = 0.01
-				
-				figure[1, 1][1, 1] = left_small_axis
-				figure[1, 1][1, 1] = right_large_axis
-				translate!(left_small_axis.scene, 0, 0, 10)
-				translate!(left_small_axis.elements[:background], 0, 0, 9)
-				
-				trim!(contents(figure[1,1])...)
-				switch_layout.label = "↰"
-			end
-			state.compact_view = !state.compact_view
-		end
-
-		on(switch_view_positions.clicks, priority=300) do event
-			if state.is_mandel_inset
-				create_plot!(left_small_axis, julia)
-				create_plot!(right_large_axis, mandel)
-			else
-				create_plot!(left_small_axis, mandel)
-				create_plot!(right_large_axis, julia)
-			end
-
-			state.is_mandel_inset = !state.is_mandel_inset
-		end
-	
-	    return Viewer(figure, state, mandel, julia)
+		add_buttons!(figure, frames, state)
+		add_events!(frames)
+	    return Viewer(figure, state, mandel, julia, frames)
 	end
 end
 
 # ╔═╡ 58c6f6ca-780a-4fec-b2e3-0583ffc92e9f
 viewer = Viewer();
 
-# ╔═╡ 616d4072-b27a-4a09-ab12-63a72d1a6a1c
+# ╔═╡ ad444911-129e-4ead-a74a-47d150069fca
 display(GLMakie.Screen(), viewer.figure)
+
+# ╔═╡ 576447bd-2000-4718-9d0a-b6537a9cfe69
+events(viewer.figure).keyboardstate
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -1639,16 +1860,27 @@ version = "1.4.1+1"
 
 # ╔═╡ Cell order:
 # ╠═14e6fdac-460d-11ef-2cd0-9d0a03e4fe10
+# ╠═c5928b33-9032-4b7c-a4c8-ac8821399e15
+# ╠═0bd59fb9-06f8-41a1-992c-96c39801e283
 # ╠═edebc0cd-0549-41f6-814d-d764ff455624
+# ╠═d1edd0b7-6e66-4e9b-9a2f-117049df1316
+# ╠═c815751e-737f-4ac2-9e6f-dee774eadee8
 # ╠═c5744a65-e2d1-413f-9ed4-9f7cf93b31cb
+# ╠═f0456fd9-d9e8-4ffd-91a4-4c7751745ac2
 # ╠═872f50d1-7696-494d-8652-ac9c980981e8
-# ╠═0f175eca-78f4-49ee-be40-c86083f50c22
+# ╠═673dba4f-3fa6-497b-89f8-d5b1ed8fe022
 # ╠═36bb9bd9-a7e2-4b82-bffe-4f440d603b45
-# ╠═64396304-ca05-40ce-9e88-4aa6e07d58e1
 # ╠═9cadee68-e2d6-4781-a773-3b7cddb33d70
+# ╠═4d8a42fd-c700-4e91-abf0-1279af3b057a
 # ╠═5685eb81-e881-419a-9579-ecf60d838eca
+# ╠═0e662e66-cdbe-426d-bc1b-d89a6ac0b3ff
+# ╠═6ba1207f-7f5c-4527-8e50-c79474f25588
+# ╠═9d42be82-efea-443d-b249-885c5707a139
+# ╠═2a0f609d-694b-4ee0-8585-49f296d6f955
+# ╠═eff07449-30fd-43d9-a7ae-1b8c9280c62a
 # ╠═f927a520-1b50-4358-9c23-e5cd3ce53ddb
 # ╠═58c6f6ca-780a-4fec-b2e3-0583ffc92e9f
-# ╠═616d4072-b27a-4a09-ab12-63a72d1a6a1c
+# ╠═ad444911-129e-4ead-a74a-47d150069fca
+# ╠═576447bd-2000-4718-9d0a-b6537a9cfe69
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002

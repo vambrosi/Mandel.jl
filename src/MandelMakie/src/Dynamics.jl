@@ -6,6 +6,17 @@ const DEFAULT_VALUE = 0.5
 # Coloring Algorithms for the Complex Plane
 # --------------------------------------------------------------------------------------- #
 
+function orbit(f::Function, z::Number, c::Number, iterates::Integer)
+    zs = Vector{ComplexF64}(undef, iterates + 1)
+    zs[1] = z
+
+    for i in 2:(iterates + 1)
+        zs[i] = f(zs[i - 1], c)
+    end
+
+    return zs
+end
+
 function escape_time(
     f::Function,
     df::Function,

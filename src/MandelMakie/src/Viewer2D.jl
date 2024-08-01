@@ -1,32 +1,88 @@
 # --------------------------------------------------------------------------------------- #
-# 2D Viewer for Complex Analytic Maps
+# Views of Mandelbrot and Julia Sets
 # --------------------------------------------------------------------------------------- #
 
 abstract type View end
 
-mutable struct ViewerOptions
-	esc_radius::Float64
-	max_iter::Int
-	orbit_len::Int
-	crit_len::Int
+mutable struct Options
+	escape_radius::Float64
+	max_iterations::Int
+	orbit_length::Int
+	critical_length::Int
+	compact_view::Bool
 	coloring_algorithm::Function
 end
 
-mutable struct ViewerState
-	last_button::Symbol
+mutable struct MandelView <: View
+	center::ComplexF64
+	diameter::Float64
+	pixels::Int
+
+	init_center::ComplexF64
+	init_diameter::Float64
+
+	color_levels::Observable{Matrix{Float64}}
+	points::Observable{Vector{ComplexF64}}
+	marks::Observable{Vector{ComplexF64}}
+
+	function MandelView(; center = 0.0im, diameter = 4.0, pixels = 1000)
+		diameter > 0.0 || throw("diameter must be a positive real")
+		pixels > 0 || throw("pixels must be a positive integer")
+
+		color_levels = zeros(Float64, pixels, pixels)
+		points = ComplexF64[center]
+		marks = ComplexF64[]
+
+		return new(
+			center, diameter, pixels, center,
+			diameter, color_levels, points, marks
+		)
+	end
 end
 
-function to_complex(view::View, point)
-	x,  y = point[1], point[2]
+mutable struct JuliaView <: View
+	center::ComplexF64
+	diameter::Float64
+	parameter::ComplexF64
+	pixels::Int
 
-	ppu = view.pixels / view.diameter
-	a = (x + 0.5 - view.pixels / 2) / ppu
-	b = (y + 0.5 - view.pixels / 2) / ppu
+	init_center::ComplexF64
+	init_diameter::Float64
+
+	color_levels::Observable{Matrix{Float64}}
+	points::Observable{Vector{ComplexF64}}
+	marks::Observable{Vector{ComplexF64}}
+
+	function JuliaView(; center = 0.0im, diameter = 4.0, parameter = 0.0im, pixels = 1000)
+		diameter > 0.0 || throw("diameter must be a positive real")
+		pixels > 0 || throw("pixels must be a positive integer")
+
+		color_levels = zeros(Float64, pixels, pixels)
+		points = ComplexF64[center]
+		marks = ComplexF64[]
+
+		return new(
+			center, diameter, parameter, pixels, center,
+			diameter, color_levels, points, marks
+		)
+	end
+end
+
+# --------------------------------------------------------------------------------------- #
+# Change of Coordinates between Complex Plane and Pixel Space
+# --------------------------------------------------------------------------------------- #
+
+function to_complex_plane(view::View, pixel_vector)
+	x,  y = pixel_vector[1], pixel_vector[2]
+
+	upp = view.diameter / view.pixels
+	a = (x + 0.5 - view.pixels / 2) * upp
+	b = (y + 0.5 - view.pixels / 2) * upp
 
 	return view.center + complex(a, b)
 end
 
-function to_image_coords(view::View, z::Number)
+function to_pixel_space(view::View, z::Number)
 	ppu = view.pixels / view.diameter
 	w = z - view.center
 
@@ -36,7 +92,7 @@ function to_image_coords(view::View, z::Number)
 	return [x, y]
 end
 
-function to_image_coords(view::View, zs::Vector{<:Number})
+function to_pixel_space(view::View, zs::Vector{<:Number})
 	ppu = view.pixels / view.diameter
 	xs = Float64[]
 	ys = Float64[]
@@ -50,149 +106,21 @@ function to_image_coords(view::View, zs::Vector{<:Number})
 	return xs, ys
 end
 
-function prepare!(view::View)
-	hidedecorations!(view.axis)
-	hidespines!(view.axis)
-	deregister_interaction!(view.axis, :rectanglezoom)
-	deregister_interaction!(view.axis, :dragpan)
-
-	plt = heatmap!(
-		view.axis,
-		view.array,
-		colormap = :twilight,
-		colorrange = (0.0, 1.0),
-		inspectable = false,
-		inspector_label = (self, i, p) -> let
-			z = to_complex(view, p)
-			"x: $(real(z))\ny: $(imag(z))"
-		end,
-	)
-
-	plt.inspectable = view.inspectable
-
-	points = lift(view.points) do zs
-		xs, ys = to_image_coords(view, zs)
-		return Point2f.(xs, ys)
-	end
-
-	lines!(
-		view.axis,
-		points,
-		color = (:red, 0.5),
-		inspectable = false,
-	)
-
-	scatter!(
-		view.axis,
-		points,
-		color = (:red, 1.0),
-		inspector_label = (self, i, p) -> let
-			z = to_complex(view, p)
-			"x: $(real(z))\ny: $(imag(z))"
-		end,
-	)
-
-	marks = lift(view.marks) do zs
-		xs, ys = to_image_coords(view, zs)
-		return Point2f.(xs, ys)
-	end
-
-	lines!(
-		view.axis,
-		marks,
-		color = (:blue, 0.5),
-		inspectable = false,
-	)
-
-	scatter!(
-		view.axis,
-		marks,
-		color = (:blue, 1.0),
-		inspector_label = (self, i, p) -> let
-			z = to_complex(view, p)
-			"x: $(real(z))\ny: $(imag(z))"
-		end,
-	)
-
-	DataInspector(view.axis)
-end
-
-@with_kw mutable struct MandelView <: View
-	axis::Axis
-	center::ComplexF64 = 0.0im
-	diameter::Float64 = 4.0
-	pixels::Int = 1000
-
-	init_center::ComplexF64 = center
-	init_diameter::Float64 = diameter
-
-	array::Observable{Matrix{Float64}} =
-		Observable(zeros(Float64, pixels, pixels))
-	points::Observable{Vector{ComplexF64}} =
-		Observable([init_center])
-	marks::Observable{Vector{ComplexF64}} =
-		Observable(ComplexF64[])
-
-	inspectable::Observable{Any} = Observable{Any}(false)
-
-	is_zooming::Bool = false
-	zooming::Timer = Timer(identity, 0.1)
-
-	function MandelView(args...)
-		view = new(args...)
-		prepare!(view)
-		return view
-	end
-end
-
-@with_kw mutable struct JuliaView <: View
-	axis::Axis
-	center::ComplexF64 = 0.0im
-	diameter::Float64 = 4.0
-	parameter::ComplexF64 = 0.0im
-	pixels::Int = 1000
-
-	init_center::ComplexF64 = center
-	init_diameter::Float64 = diameter
-
-	array::Observable{Matrix{Float64}} =
-		Observable(zeros(Float64, pixels, pixels))
-	points::Observable{Vector{ComplexF64}} =
-		Observable([init_center])
-	marks::Observable{Vector{ComplexF64}} =
-		Observable(ComplexF64[])
-
-	inspectable::Observable{Any} = Observable{Any}(false)
-
-	is_zooming::Bool = false
-	zooming::Timer = Timer(identity, 0.1)
-
-	function JuliaView(args...)
-		view = new(args...)
-		prepare!(view)
-		return view
-	end
-end
-
-function orbit(f::Function, z::Number, c::Number, iterates::Integer)
-	orbit = [z]
-	for i in 1:iterates
-		push!(orbit, f(orbit[end], c))
-	end
-	return orbit
-end
+# --------------------------------------------------------------------------------------- #
+# Updating Plots
+# --------------------------------------------------------------------------------------- #
 
 function pick_orbit!(
 	julia::JuliaView,
 	d_system::DynamicalSystem,
-	options::ViewerOptions,
+	options::Options,
 	z::Number,
 )
 	julia.points[] = orbit(
 		d_system.f,
 		z,
 		julia.parameter,
-		options.orbit_len - 1,
+		options.orbit_length - 1,
 	)
 	return julia
 end
@@ -211,7 +139,7 @@ function mandel_slice!(array, j, f, df_dz, crit, corner, step, pxs, options)
 	@inbounds for i in 1:pxs
 		c = corner + step * complex(i, j)
 		array[i, j] = options.coloring_algorithm(
-			f, df_dz, crit(c), c, options.esc_radius, options.max_iter
+			f, df_dz, crit(c), c, options.escape_radius, options.max_iterations
 		)
 	end
 	return nothing
@@ -224,13 +152,13 @@ function update_grid!(
 	crit::Function,
 	corner::ComplexF64,
 	step::Float64,
-	options::ViewerOptions,
+	options::Options,
 )
 	futures = Vector{Task}(undef, view.pixels)
 
 	@inbounds for j in 1:view.pixels
 		futures[j] = Threads.@spawn mandel_slice!(
-			view.array[], j, f, df_dz, crit, corner, step, view.pixels, options
+			view.color_levels[], j, f, df_dz, crit, corner, step, view.pixels, options
 		)
 	end
 
@@ -242,7 +170,7 @@ function julia_slice!(array, j, f, df_dz, c, corner, step, pxs, options)
 	@inbounds for i in 1:pxs
 		z = corner + step * complex(i, j)
 		array[i, j] = options.coloring_algorithm(
-			f, df_dz, z, c,	options.esc_radius,	options.max_iter,
+			f, df_dz, z, c,	options.escape_radius, options.max_iterations,
 		)
 	end
 	return nothing
@@ -255,13 +183,13 @@ function update_grid!(
 	crit::Function,
 	corner::ComplexF64,
 	step::Float64,
-	options::ViewerOptions,
+	options::Options,
 )
 	futures = Vector{Task}(undef, view.pixels)
 
 	@inbounds for j in 1:view.pixels
 		futures[j] = Threads.@spawn julia_slice!(
-			view.array[], j, f, df_dz, view.parameter, corner, step, view.pixels, options
+			view.color_levels[], j, f, df_dz, view.parameter, corner, step, view.pixels, options
 		)
 	end
 
@@ -269,7 +197,7 @@ function update_grid!(
 	return nothing
 end
 
-function update_view!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
+function update_view!(view::View, d_system::DynamicalSystem, options::Options)
 	corner, step = corner_and_step(view)
 	update_grid!(
 		view,
@@ -280,30 +208,9 @@ function update_view!(view::View, d_system::DynamicalSystem, options::ViewerOpti
 		step,
 		options,
 	)
-	notify(view.array)
+	notify(view.color_levels)
 	notify(view.points)
 	notify(view.marks)
-
-	return view
-end
-
-function zoom!(view::View, d_system::DynamicalSystem, options::ViewerOptions)
-	view.is_zooming = true
-
-	x_min, x_max, _, _ = view.axis.limits[]
-	original_size = x_max - x_min
-	x1_min, x1_max = view.axis.xaxis.attributes.limits[]
-	current_size = x1_max - x1_min
-
-	scale = current_size / original_size
-	point = mouseposition(view.axis.scene)
-	z = to_complex(view, point)
-
-	view.diameter *= scale
-	view.center = scale * view.center + (1 - scale) * z
-	update_view!(view, d_system, options)
-	reset_limits!(view.axis)
-	view.is_zooming = false
 
 	return view
 end
@@ -312,7 +219,7 @@ function pick_parameter!(
 	julia::JuliaView,
 	mandel::MandelView,
 	d_system::DynamicalSystem,
-	options::ViewerOptions,
+	options::Options,
 	point,
 )
 	julia.parameter = point
@@ -321,7 +228,7 @@ function pick_parameter!(
 		d_system.f,
 		d_system.crit(julia.parameter),
 		julia.parameter,
-		options.crit_len - 1,
+		options.critical_length - 1,
 	)
 
 	mandel.points[] = [julia.parameter]
@@ -331,104 +238,252 @@ function pick_parameter!(
 	return julia
 end
 
-import Dates
+# --------------------------------------------------------------------------------------- #
+# User Interface
+# --------------------------------------------------------------------------------------- #
 
-function save_view(filename::String, view::View)
-	pxs = view.pixels
-	fig = Figure(figure_padding=0, size=(pxs, pxs))
-	ax = Axis(fig[1, 1], aspect=AxisAspect(1))
+struct Frame
+	axis::Axis
+	view::Ref{Any}
+	events::Dict{Symbol, Any}
+end
 
-	hidedecorations!(ax)
-	hidespines!(ax)
+function translate_axis!(axis, z)
+	translate!(axis.scene, 0, 0, z)
+	translate!(axis.elements[:background], 0, 0, z-1)
+	translate!(axis.elements[:xoppositeline], 0, 0, z+1)
+	translate!(axis.elements[:yoppositeline], 0, 0, z+1)
+	translate!(axis.xaxis.elements[:axisline], 0, 0, z+1)
+	translate!(axis.yaxis.elements[:axisline], 0, 0, z+1)
+end
+
+function create_frames!(figure, options, mandel, julia)
+	mandel_limits = (0.5, 0.5 + mandel.pixels, 0.5, 0.5 + mandel.pixels)
+	julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
+
+	left_axis = Axis(figure[1,1][1,1], aspect=1, limits=mandel_limits)
+	right_axis = Axis(figure[1,1][1,1], aspect=1, limits=julia_limits)
+	translate_axis!(left_axis, 10)
+	translate_axis!(right_axis, 0)
+
+	if options.compact_view
+		left_axis.width = Relative(0.3)
+		left_axis.height = Relative(0.3)
+		left_axis.valign = 0.03
+		left_axis.halign = 0.03
+	end
+
+	for axis in [left_axis, right_axis]
+		hidedecorations!(axis)
+		deregister_interaction!(axis, :rectanglezoom)
+		deregister_interaction!(axis, :dragpan)
+	end
+
+	return Frame(left_axis, mandel, Dict()), Frame(right_axis, julia, Dict())
+end
+
+function create_plot!(frame::Frame)
+	empty!(frame.axis)
+	view = frame.view[]
 
 	heatmap!(
-		ax,
-		view.array[],
+		frame.axis,
+		view.color_levels,
 		colormap = :twilight,
-		colorrange = (0.0, 1.0)
+		colorrange = (0.0, 1.0),
+		inspectable = false,
+		inspector_label = (self, i, p) -> let
+			z = to_complex_plane(view, p)
+			"x: $(real(z))\ny: $(imag(z))"
+		end,
 	)
 
-	Makie.save(filename, fig)
+	point_vectors = lift(view.points) do zs
+		xs, ys = to_pixel_space(view, zs)
+		return Point2f.(xs, ys)
+	end
+
+	lines!(
+		frame.axis,
+		point_vectors,
+		color = (:red, 0.5),
+		inspectable = false,
+	)
+
+	scatter!(
+		frame.axis,
+		point_vectors,
+		color = (:red, 1.0),
+		inspector_label = (self, i, p) -> let
+			z = to_complex_plane(view, p)
+			"x: $(real(z))\ny: $(imag(z))"
+		end,
+	)
+
+	mark_vectors = lift(view.marks) do zs
+		xs, ys = to_pixel_space(view, zs)
+		return Point2f.(xs, ys)
+	end
+
+	lines!(
+		frame.axis,
+		mark_vectors,
+		color = (:blue, 0.5),
+		inspectable = false,
+	)
+
+	scatter!(
+		frame.axis,
+		mark_vectors,
+		color = (:blue, 1.0),
+		inspector_label = (self, i, p) -> let
+			z = to_complex_plane(view, p)
+			"x: $(real(z))\ny: $(imag(z))"
+		end,
+	)
+
+	return frame
 end
 
-function reset!(
-	view::View,
-	d_system::DynamicalSystem,
-	options::ViewerOptions
-)
-	view.center = view.init_center
-	view.diameter = view.init_diameter
+function zoom!(frame::Frame, d_system::DynamicalSystem, options::Options)
+	frame.events[:is_zooming] = true
+	view = frame.view[]
+
+	x_min, x_max, _, _ = frame.axis.limits[]
+	original_size = x_max - x_min
+	x1_min, x1_max = frame.axis.xaxis.attributes.limits[]
+	current_size = x1_max - x1_min
+
+	scale = current_size / original_size
+	vector = mouseposition(frame.axis.scene)
+	z = to_complex_plane(view, vector)
+
+	view.diameter *= scale
+	view.center = scale * view.center + (1 - scale) * z
 	update_view!(view, d_system, options)
-	reset_limits!(view.axis)
-	return view
+	reset_limits!(frame.axis)
+	frame.events[:is_zooming] = false
+
+	return frame
 end
 
-function add_view_buttons(
-	position,
-	view::View,
+# import Dates
+
+# function save_view(filename::String, view::View)
+# 	pxs = view.pixels
+# 	fig = Figure(figure_padding=0, size=(pxs, pxs))
+# 	ax = Axis(fig[1, 1], aspect=AxisAspect(1))
+
+# 	hidedecorations!(ax)
+# 	hidespines!(ax)
+
+# 	heatmap!(
+# 		ax,
+# 		view.color_levels[],
+# 		colormap = :twilight,
+# 		colorrange = (0.0, 1.0)
+# 	)
+
+# 	Makie.save(filename, fig)
+# end
+
+# function reset!(
+# 	view::View,
+# 	d_system::DynamicalSystem,
+# 	options::Options
+# )
+# 	view.center = view.init_center
+# 	view.diameter = view.init_diameter
+# 	update_view!(view, d_system, options)
+# 	reset_limits!(view.axis)
+# 	return view
+# end
+
+# function add_view_buttons(
+# 	position,
+# 	view::View,
+# 	d_system::DynamicalSystem,
+# 	options::Options,
+# )
+# 	buttons = GridLayout(
+# 		position,
+# 		width=Relative(0.95),
+# 		valign=0.97,
+# 		tellheight = false,
+# 		tellwidth = false,
+# 		default_colgap = 8,
+# 	)
+
+# 	save_button = Button(buttons[1, 2], label="Save")
+
+# 	on(save_button.clicks, priority=300) do event
+# 		format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
+# 		time = string(Dates.format(Dates.now(), format))
+# 		!isdir("imgs") && mkdir("imgs")
+# 		save_view("imgs/" * time * ".png", view)
+# 		return Consume(false)
+# 	end
+
+# 	reset_button = Button(buttons[1, 3], label="Reset")
+
+# 	on(reset_button.clicks, priority=300) do event
+# 		if !view.is_zooming
+# 			reset!(view, d_system, options)
+# 		end
+
+# 		return Consume(false)
+# 	end
+# end
+
+function add_frame_events!(
+	frame::Frame,
+	topframe::Frame,
 	d_system::DynamicalSystem,
-	options::ViewerOptions,
+	options::Options,
+	julia::JuliaView,
 )
-	buttons = GridLayout(
-		position,
-		width=Relative(0.95),
-		valign=0.97,
-		tellheight = false,
-		tellwidth = false,
-		default_colgap = 8,
-	)
+	axis = frame.axis
+	scene = axis.scene
 
-	save_button = Button(buttons[1, 2], label="Save")
+	dragging = false
+	dragstart = Point2f(0.0)
+	dragend = Point2f(0.0)
 
-	on(save_button.clicks, priority=300) do event
-		format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
-		time = string(Dates.format(Dates.now(), format))
-		!isdir("imgs") && mkdir("imgs")
-		save_view("imgs/" * time * ".png", view)
-		return Consume(false)
-	end
+	to_world_at_start = z -> to_world(scene, z)
 
-	reset_button = Button(buttons[1, 3], label="Reset")
+	is_zooming = false
+	zooming = Timer(identity, 0.1)
 
-	on(reset_button.clicks, priority=300) do event
-		if !view.is_zooming
-			reset!(view, d_system, options)
-		end
+	is_topframe = frame == topframe
+	z_level = is_topframe ? 10 : 0
 
-		return Consume(false)
-	end
-end
-
-function add_view_events(view::View, other::View, d_system::DynamicalSystem, options::ViewerOptions)
-	dragging = Ref(false)
-	dragstart = Ref(Point2f(0.0))
-	dragend = Ref(Point2f(0.0))
-	to_world_at_start = z -> to_world(view.axis.scene, z)
-
-	on(events(view.axis.scene).mousebutton) do event
-		mp = mouseposition_px(view.axis.scene)
+	on(events(scene).mousebutton) do event
+		mp = mouseposition_px(scene)
+		view = frame.view[]
 
 		if event.button == Mouse.right
-			if event.action == Mouse.press && is_mouseinside(view.axis)
-				dragging[] = true
-				to_world_at_start = z -> to_world(view.axis.scene, z)
-				dragstart[] = to_world_at_start(mp)
+			if event.action == Mouse.press && is_mouseinside(axis) &&
+					(is_topframe || !is_mouseinside(topframe.axis))
+				dragging = true
+				to_world_at_start = z -> to_world(scene, z)
+				dragstart = to_world_at_start(mp)
 
-			elseif event.action == Mouse.release && dragging[]
-				dragend[] = to_world_at_start(mp)
-				view.center += to_complex(view, dragstart[]) - to_complex(view, dragend[])
-				translate!(view.axis.scene, Point2(0))
+			elseif event.action == Mouse.release && dragging
+				dragend = to_world_at_start(mp)
+				view.center += to_complex_plane(view, dragstart) - to_complex_plane(view, dragend)
+				translate!(scene, 0, 0, z_level)
 				update_view!(view, d_system, options)
-				reset_limits!(view.axis)
-				dragging[] = false
+				reset_limits!(axis)
+				dragging = false
 			end
 		end
 
 		if event.button == Mouse.left
-			if event.action == Mouse.press && is_mouseinside(view.axis)
-				point = to_complex(view, to_world_at_start(mp))
+			if event.action == Mouse.press && is_mouseinside(axis) &&
+					(is_topframe || !is_mouseinside(topframe.axis))
+				point = to_complex_plane(view, to_world_at_start(mp))
 				if view isa MandelView
-					pick_parameter!(other, view, d_system, options, point)
+					pick_parameter!(julia, view, d_system, options, point)
 				elseif view isa JuliaView
 					pick_orbit!(view, d_system, options, point)
 				end
@@ -436,37 +491,157 @@ function add_view_events(view::View, other::View, d_system::DynamicalSystem, opt
 		end
 	end
 
-	on(events(view.axis.scene).mouseposition) do event
-		if dragging[]
-			mp = mouseposition_px(view.axis.scene)
-			translate!(view.axis.scene, to_world_at_start(mp) - dragstart[])
+	on(events(scene).mouseposition) do event
+		if dragging
+			mp = mouseposition(scene)
+			translate!(scene, mp - dragstart..., z_level)
 		end
 	end
 
-	on(events(view.axis.scene).scroll, priority=100) do event
-		if is_mouseinside(view.axis) && !view.is_zooming
-			close(view.zooming)
-			view.zooming = Timer(_ -> zoom!(view, d_system, options), 0.1)
+	on(events(scene).scroll, priority=100) do event
+		if is_mouseinside(axis) && !is_zooming &&
+				(is_topframe || is_mouseinside(topframe.axis))
+			close(zooming)
+			zooming = Timer(_ -> zoom!(frame, d_system, options), 0.1)
 		end
 	end
+
+	frame.events[:dragging] = dragging
+	frame.events[:dragstart] = dragstart
+	frame.events[:dragend] = dragstart
+	frame.events[:is_zooming] = is_zooming
+	frame.events[:zooming] = zooming
+end
+
+function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
+	layout = GridLayout(figure[2,1])
+
+	labels = Dict(
+		:max_iter => Label(layout[1,3], "Maximum\nIterations:"),
+		:orbit_len => Label(layout[1,5], "Orbit\nLength:"),
+		:critical_length => Label(layout[1,7], "Critical Point\nOrbit Length:"),
+		:escape_radius => Label(layout[1,9], "Escape\nRadius:"),
+	)
+
+	inputs = Dict(
+		:switch_layout => Button(layout[1,1], label="↰", halign=:left),
+		:switch_positions => Button(layout[1,2], label="↔", halign=:left),
+		:max_iter => Textbox(
+			layout[1,4],
+			width = 60,
+			placeholder = string(options.max_iterations),
+			validator = Int,
+		),
+		:orbit_len => Textbox(
+			layout[1,6],
+			width = 60,
+			placeholder = string(options.orbit_length),
+			validator = Int,
+		),
+		:critical_length => Textbox(
+			layout[1,8],
+			width = 60,
+			placeholder = string(options.orbit_length),
+			validator = Int,
+		),
+		:escape_radius => Textbox(
+			layout[1,10],
+			width = 60,
+			placeholder = string(options.escape_radius),
+			validator = Float64,
+		),
+	)
+
+	on(inputs[:switch_layout].clicks, priority=300) do event
+		if options.compact_view
+			left_frame.axis.width = nothing
+			left_frame.axis.height = nothing
+			left_frame.axis.valign = :center
+			left_frame.axis.halign = :center
+
+			figure[1, 1][1, 1] = left_frame.axis
+			figure[1, 1][1, 2] = right_frame.axis
+
+			inputs[:switch_layout].label = "↳"
+		else
+			left_frame.axis.width = Relative(0.3)
+			left_frame.axis.height = Relative(0.3)
+			left_frame.axis.valign = 0.01
+			left_frame.axis.halign = 0.01
+
+			figure[1, 1][1, 1] = left_frame.axis
+			figure[1, 1][1, 1] = right_frame.axis
+
+			trim!(contents(figure[1,1])...)
+			inputs[:switch_layout].label = "↰"
+		end
+
+		options.compact_view = !options.compact_view
+	end
+
+	on(inputs[:switch_positions].clicks, priority=300) do event
+		left_frame.view[], right_frame.view[] =
+			right_frame.view[], left_frame.view[]
+		create_plot!(left_frame)
+		create_plot!(right_frame)
+	end
+
+	on(inputs[:max_iter].stored_string) do s
+		options.max_iterations = parse(Int, s)
+		update_view!(julia, d_system, options)
+		update_view!(mandel, d_system, options)
+	end
+
+	on(inputs[:orbit_len].stored_string) do s
+		options.orbit_length = parse(Int, s)
+		pick_orbit!(
+			julia,
+			d_system,
+			options,
+			julia.points[][begin],
+		)
+	end
+
+	on(inputs[:critical_length].stored_string) do s
+		options.critical_length = parse(Int, s)
+		julia.marks[] = orbit(
+			d_system.f,
+			d_system.crit(julia.parameter),
+			julia.parameter,
+			options.critical_length - 1,
+		)
+	end
+
+	on(inputs[:escape_radius].stored_string) do s
+		options.escape_radius = parse(Float64, s)
+		update_view!(julia, d_system, options)
+		update_view!(mandel, d_system, options)
+	end
+
+	return inputs
 end
 
 struct Viewer
 	d_system::DynamicalSystem
-	options::ViewerOptions
+	options::Options
 
 	figure::Figure
+	left_frame::Frame
+	right_frame::Frame
+
 	mandel::MandelView
 	julia::JuliaView
+	inputs::Dict{Symbol, Any}
 
 	function Viewer(
 			f;
             crit=0.0im,
 			c=0.0im,
 			mandel_center=0.0im,
-			mandel_diam=4.0,
+			mandel_diameter=4.0,
 			julia_center=0.0im,
-			julia_diam=4.0,
+			julia_diameter=4.0,
+			compact_view=true,
 			coloring_algorithm=:escape_time,
 		)
 
@@ -477,27 +652,16 @@ struct Viewer
 		)
 
         d_system = DynamicalSystem(f, crit)
-		options = ViewerOptions(100.0, 200, 1, 1, algs[coloring_algorithm])
-		state = ViewerState(:zoom)
-		figure = Figure(figure_padding=10, size=(900, 510))
+		options = Options(100.0, 200, 1, 1, compact_view, algs[coloring_algorithm])
+		figure = Figure(figure_padding=10, size=(800, 750))
 
 		mandel = MandelView(
-			axis = Axis(figure[1, 1][1, 1], aspect=AxisAspect(1), limits = (0.5, 1000.5, 0.5, 1000.5)),
-			center = mandel_center,
-			diameter = mandel_diam,
-			pixels = 1000,
+			center = mandel_center, diameter = mandel_diameter, pixels = 1000
 		)
 
 		julia = JuliaView(
-			axis = Axis(figure[1, 1][1, 2], aspect=AxisAspect(1), limits = (0.5, 1000.5, 0.5, 1000.5)),
-			center = julia_center,
-			diameter = julia_diam,
-			parameter = c,
-			pixels = 1000,
+			center = julia_center, diameter = julia_diameter, parameter = c, pixels = 1000
 		)
-
-		mandel.inspectable[] = state.last_button == :pick
-		julia.inspectable[] = state.last_button == :pick
 
 		mandel.points[] = [julia.parameter]
 		julia.marks[] = [d_system.crit(julia.parameter)]
@@ -508,87 +672,27 @@ struct Viewer
 			julia.points[][begin],
 		)
 
+		left_frame, right_frame = create_frames!(figure, options, mandel, julia)
+		create_plot!(left_frame)
+		create_plot!(right_frame)
+
+		add_frame_events!(left_frame, left_frame, d_system, options, julia)
+		add_frame_events!(right_frame, left_frame, d_system, options, julia)
+
 		update_view!(mandel, d_system, options)
 		update_view!(julia, d_system, options)
 
-		colsize!(figure.layout, 1, Relative(0.97))
-		rowsize!(figure.layout, 1, Aspect(1, 0.5))
+		# colsize!(figure.layout, 1, Relative(0.97))
+		# rowsize!(figure.layout, 1, Aspect(1, 0.5))
 		colgap!(content(figure[1,1]), 10)
 
-		plots = figure[1, 1]
-		add_view_buttons(plots[1, 1], mandel, d_system, options)
-		add_view_buttons(plots[1, 2], julia, d_system, options)
+		# plots = figure[1, 1]
+		# add_view_buttons(plots[1, 1], mandel, d_system, options)
+		# add_view_buttons(plots[1, 2], julia, d_system, options)
 
-		labels = Dict(
-			:max_iter => Label(figure[2,1][1,1], "Maximum\nIterations:"),
-			:orbit_len => Label(figure[2,1][1,3], "Orbit\nLength:"),
-			:crit_len => Label(figure[2,1][1,5], "Critical Point\nOrbit Length:"),
-			:esc_radius => Label(figure[2,1][1,7], "Escape\nRadius:"),
-		)
+		inputs = add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
 
-		input_fields = Dict(
-			:max_iter => Textbox(
-				figure[2,1][1,2],
-				width = 60,
-				placeholder = string(options.max_iter),
-				validator = Int,
-			),
-			:orbit_len => Textbox(
-				figure[2,1][1,4],
-				width = 60,
-				placeholder = string(options.orbit_len),
-				validator = Int,
-			),
-			:crit_len => Textbox(
-				figure[2,1][1,6],
-				width = 60,
-				placeholder = string(options.orbit_len),
-				validator = Int,
-			),
-			:esc_radius => Textbox(
-				figure[2,1][1,8],
-				width = 60,
-				placeholder = string(options.esc_radius),
-				validator = Float64,
-			),
-		)
-
-		on(input_fields[:max_iter].stored_string) do s
-		    options.max_iter = parse(Int, s)
-			update_view!(julia, d_system, options)
-			update_view!(mandel, d_system, options)
-		end
-
-		on(input_fields[:orbit_len].stored_string) do s
-		    options.orbit_len = parse(Int, s)
-			pick_orbit!(
-				julia,
-				d_system,
-				options,
-				julia.points[][begin],
-			)
-		end
-
-		on(input_fields[:crit_len].stored_string) do s
-		    options.crit_len = parse(Int, s)
-			julia.marks[] = orbit(
-				d_system.f,
-				d_system.crit(julia.parameter),
-				julia.parameter,
-				options.crit_len - 1,
-			)
-		end
-
-		on(input_fields[:esc_radius].stored_string) do s
-		    options.esc_radius = parse(Float64, s)
-			update_view!(julia, d_system, options)
-			update_view!(mandel, d_system, options)
-		end
-
-		add_view_events(mandel, julia, d_system, options)
-		add_view_events(julia, mandel, d_system, options)
-
-		return new(d_system, options, figure, mandel, julia)
+		return new(d_system, options, figure, left_frame, right_frame, mandel, julia, inputs)
 	end
 end
 

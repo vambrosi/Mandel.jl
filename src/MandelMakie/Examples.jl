@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.43
+# v0.19.45
 
 using Markdown
 using InteractiveUtils
@@ -20,7 +20,6 @@ begin
 	Viewer3D = MandelMakie.Viewer3D
 	Julia3D = MandelMakie.Julia3D
 	Fatou3D = MandelMakie.Fatou3D
-	to_complex = MandelMakie.to_complex
 	set_parameter! = MandelMakie.set_parameter!
 end
 
@@ -48,7 +47,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-viewer = Viewer(f; crit=crit, mandel_diam=1.0)
+viewer = Viewer(f; crit=crit, mandel_diameter=1.0)
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true
