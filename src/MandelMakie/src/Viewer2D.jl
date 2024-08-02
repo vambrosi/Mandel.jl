@@ -276,6 +276,7 @@ function create_frames!(figure, options, mandel, julia)
 	for axis in [left_axis, right_axis]
 		hidedecorations!(axis)
 		deregister_interaction!(axis, :rectanglezoom)
+		deregister_interaction!(axis, :limitreset)
 		deregister_interaction!(axis, :dragpan)
 	end
 
@@ -481,6 +482,18 @@ function add_frame_events!(
 		if event.button == Mouse.left
 			if event.action == Mouse.press && is_mouseinside(axis) &&
 					(is_topframe || !is_mouseinside(topframe.axis))
+
+				if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
+					view.center = view.init_center
+					view.diameter = view.init_diameter
+
+					translate!(scene, 0, 0, z_level)
+					update_view!(view, d_system, options)
+					reset_limits!(axis)
+
+					return Consume(true)
+				end
+
 				point = to_complex_plane(view, to_world_at_start(mp))
 				if view isa MandelView
 					pick_parameter!(julia, view, d_system, options, point)
@@ -489,6 +502,8 @@ function add_frame_events!(
 				end
 			end
 		end
+
+		return Consume(false)
 	end
 
 	on(events(scene).mouseposition) do event
@@ -621,6 +636,47 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
 	return inputs
 end
 
+"""
+	Viewer(f; <keyword arguments>)
+
+Create a `Viewer` that plots the Mandelbrot and the Julia sets associated with the \
+function `f`. `f` can have one or two inputs, the second being the parameter. \
+By default, the `Viewer` opens as a separate window.
+
+# Examples
+```julia-repl
+julia> Viewer((z, c) -> z^2 + c, mandel_center=-0.5)
+```
+
+# Shortcuts
+
+- `Right Click Drag`: Pans view.
+- `Mouse Scroll`: Zooms in or out.
+- `Left Click` (parameter space): Chooses parameter.
+- `Left Click` (dynamical space): Chooses orbit initial point.
+- `Ctrl + Left Click`: Resets view to initial `center` and `diameter`.
+
+# Arguments
+- `crit = 0.0im`: Function that gives a critical point for each parameter. Used to \
+to plot the Mandelbrot set. If it is a constant function, you can just input the constant \
+directly.
+
+- `c = 0.0im`: Initial parameter used to plot the Julia set.
+
+- `mandel_center = 0.0im`: Initial center of the Mandelbrot plot.
+
+- `mandel_diameter = 4.0`: Initial diameter of the Mandelbrot plot.
+
+- `julia_center = 0.0im`: Initial center of the Julia plot.
+
+- `julia_diameter = 4.0`: Initial diameter of the Julia plot.
+
+- `compact_view = true`: If 'true' one of the plots is show as an inset plot, if `false` \
+they are shown side-by-side.
+
+- `coloring_algorithm = :escape_time`: Chooses the coloring method for both plots. \
+The options are `:escape_time`, `:stop_time`, `:escape_preperiod`.
+"""
 struct Viewer
 	d_system::DynamicalSystem
 	options::Options
