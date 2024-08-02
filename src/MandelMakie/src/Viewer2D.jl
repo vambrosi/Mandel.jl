@@ -1,3 +1,5 @@
+import Dates
+
 # --------------------------------------------------------------------------------------- #
 # Views of Mandelbrot and Julia Sets
 # --------------------------------------------------------------------------------------- #
@@ -368,73 +370,23 @@ function zoom!(frame::Frame, d_system::DynamicalSystem, options::Options)
 	return frame
 end
 
-# import Dates
+function save_view(filename::String, view::View)
+	pxs = view.pixels
+	fig = Figure(figure_padding=0, size=(pxs, pxs))
+	ax = Axis(fig[1, 1], aspect=AxisAspect(1))
 
-# function save_view(filename::String, view::View)
-# 	pxs = view.pixels
-# 	fig = Figure(figure_padding=0, size=(pxs, pxs))
-# 	ax = Axis(fig[1, 1], aspect=AxisAspect(1))
+	hidedecorations!(ax)
+	hidespines!(ax)
 
-# 	hidedecorations!(ax)
-# 	hidespines!(ax)
+	heatmap!(
+		ax,
+		view.color_levels[],
+		colormap = :twilight,
+		colorrange = (0.0, 1.0)
+	)
 
-# 	heatmap!(
-# 		ax,
-# 		view.color_levels[],
-# 		colormap = :twilight,
-# 		colorrange = (0.0, 1.0)
-# 	)
-
-# 	Makie.save(filename, fig)
-# end
-
-# function reset!(
-# 	view::View,
-# 	d_system::DynamicalSystem,
-# 	options::Options
-# )
-# 	view.center = view.init_center
-# 	view.diameter = view.init_diameter
-# 	update_view!(view, d_system, options)
-# 	reset_limits!(view.axis)
-# 	return view
-# end
-
-# function add_view_buttons(
-# 	position,
-# 	view::View,
-# 	d_system::DynamicalSystem,
-# 	options::Options,
-# )
-# 	buttons = GridLayout(
-# 		position,
-# 		width=Relative(0.95),
-# 		valign=0.97,
-# 		tellheight = false,
-# 		tellwidth = false,
-# 		default_colgap = 8,
-# 	)
-
-# 	save_button = Button(buttons[1, 2], label="Save")
-
-# 	on(save_button.clicks, priority=300) do event
-# 		format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
-# 		time = string(Dates.format(Dates.now(), format))
-# 		!isdir("imgs") && mkdir("imgs")
-# 		save_view("imgs/" * time * ".png", view)
-# 		return Consume(false)
-# 	end
-
-# 	reset_button = Button(buttons[1, 3], label="Reset")
-
-# 	on(reset_button.clicks, priority=300) do event
-# 		if !view.is_zooming
-# 			reset!(view, d_system, options)
-# 		end
-
-# 		return Consume(false)
-# 	end
-# end
+	Makie.save(filename, fig)
+end
 
 function add_frame_events!(
 	frame::Frame,
@@ -446,6 +398,7 @@ function add_frame_events!(
 	axis = frame.axis
 	scene = axis.scene
 
+	# Mouse Events
 	dragging = false
 	dragstart = Point2f(0.0)
 	dragend = Point2f(0.0)
@@ -459,6 +412,8 @@ function add_frame_events!(
 	z_level = is_topframe ? 10 : 0
 
 	on(events(scene).mousebutton) do event
+		is_zooming && return Consume(false)
+
 		mp = mouseposition_px(scene)
 		view = frame.view[]
 
@@ -526,6 +481,24 @@ function add_frame_events!(
 	frame.events[:dragend] = dragstart
 	frame.events[:is_zooming] = is_zooming
 	frame.events[:zooming] = zooming
+
+	# Keyboard Events
+	on(events(scene).keyboardbutton) do event
+		is_zooming && return Consume(false)
+		view = frame.view[]
+
+		if ispressed(scene, (Keyboard.left_control | Keyboard.right_control) & Keyboard.s)
+			if is_mouseinside(axis) && !is_zooming &&
+					(is_topframe || !is_mouseinside(topframe.axis))
+
+				format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
+				time = string(Dates.format(Dates.now(), format))
+				!isdir("imgs") && mkdir("imgs")
+				save_view("imgs/" * time * ".png", view)
+				return Consume(true)
+			end
+		end
+	end
 end
 
 function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
@@ -647,6 +620,11 @@ By default, the `Viewer` opens as a separate window.
 ```julia-repl
 julia> Viewer((z, c) -> z^2 + c, mandel_center=-0.5)
 ```
+```julia-repl
+julia> f(z, λ) = z^2 + λ / z^2
+julia> crit(λ) = λ^(1/4)
+julia> Viewer(f; crit=crit, mandel_diameter=1.0)
+```
 
 # Shortcuts
 
@@ -655,6 +633,7 @@ julia> Viewer((z, c) -> z^2 + c, mandel_center=-0.5)
 - `Left Click` (parameter space): Chooses parameter.
 - `Left Click` (dynamical space): Chooses orbit initial point.
 - `Ctrl + Left Click`: Resets view to initial `center` and `diameter`.
+- `Ctrl + S`: Saves view that is under the mouse pointer (files in `./imgs`).
 
 # Arguments
 - `crit = 0.0im`: Function that gives a critical point for each parameter. Used to \
@@ -738,14 +717,7 @@ struct Viewer
 		update_view!(mandel, d_system, options)
 		update_view!(julia, d_system, options)
 
-		# colsize!(figure.layout, 1, Relative(0.97))
-		# rowsize!(figure.layout, 1, Aspect(1, 0.5))
 		colgap!(content(figure[1,1]), 10)
-
-		# plots = figure[1, 1]
-		# add_view_buttons(plots[1, 1], mandel, d_system, options)
-		# add_view_buttons(plots[1, 2], julia, d_system, options)
-
 		inputs = add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
 
 		return new(d_system, options, figure, left_frame, right_frame, mandel, julia, inputs)
