@@ -3,19 +3,88 @@ using StaticArraysCore, LinearAlgebra
 const DEFAULT_VALUE = 0.5
 
 # --------------------------------------------------------------------------------------- #
-# Coloring Algorithms for the Complex Plane
+# Complex Plane Definitions
 # --------------------------------------------------------------------------------------- #
 
 function orbit(f::Function, z::Number, c::Number, iterates::Integer)
     zs = Vector{ComplexF64}(undef, iterates + 1)
     zs[1] = z
 
-    for i in 2:(iterates + 1)
-        zs[i] = f(zs[i - 1], c)
+    for i = 2:(iterates+1)
+        zs[i] = f(zs[i-1], c)
     end
 
     return zs
 end
+
+# --------------------------------------------------------------------------------------- #
+# Complex Projective Line Definitions
+# --------------------------------------------------------------------------------------- #
+
+"""
+    Point(z::ComplexF64, w::ComplexF64)
+
+A `Point` in the complex line represented by a pair of complex numbers `z` and `w`.
+"""
+const Point = MVector{2,ComplexF64}
+
+"""
+    Mobius(z11::ComplexF64, z21::ComplexF64, z12::ComplexF64, z22::ComplexF64)
+
+A `Mobius` transformation represented by the 2x2 matrix:
+```
+z11 z12
+z21 z22
+```
+"""
+const Mobius = SMatrix{2,2,ComplexF64}
+
+function to_complex_plane(pt::Point)
+    return pt[1] / pt[2]
+end
+
+"""
+    hyperbolic(fixed_pt1, fixed_pt2, scale_factor)
+
+Mobius transformation with two fixed points which is conjugate to the dilation \
+`f(z) = scale_factor * z`. The conjugation maps `(fixed_pt1, fixed_pt2)` to `(0, ∞)`.
+"""
+function hyperbolic(fixed_pt1, fixed_pt2, scale_factor)
+    pt1 = normalize(fixed_pt1)
+    pt2 = normalize(fixed_pt2)
+
+    return Mobius(
+        pt1[1] * pt2[2] - scale_factor * pt2[1] * pt1[2],
+        (1 - scale_factor) * pt1[2] * pt2[2],
+        (scale_factor - 1) * pt1[1] * pt2[1],
+        scale_factor * pt1[1] * pt2[2] - pt2[1] * pt1[2],
+    )
+end
+
+"""
+    distance(pt1::Point, pt2::Point)
+
+Distance between to points on the complex projective line. This function assumes that \
+the representatives have unit norm, i.e. that they are inside the 3-sphere.
+"""
+function distance(pt1::Point, pt2::Point)
+    return norm(pt1[1] * pt2[2] - pt1[2] * pt2[1])
+end
+
+function orbit(f::Function, pt::Point, c::Point, length::Int)
+    points = Vector{Point}(undef, length)
+    points[1] = pt
+
+    for i = 2:length
+        points[i] = f(points[i-1], c)
+    end
+
+    return points
+end
+
+# --------------------------------------------------------------------------------------- #
+# Coloring Algorithms for the Complex Plane
+# --------------------------------------------------------------------------------------- #
 
 function escape_time(
     f::Function,
@@ -27,7 +96,7 @@ function escape_time(
 )
     z = z0
 
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         z = f(z, c)
 
         if abs(z) > esc_radius
@@ -49,7 +118,7 @@ function stop_time(
     z = z0
     inv_radius = 1 / 1000 * esc_radius
 
-    for iter in 1:max_iter
+    for iter = 1:max_iter
         z1 = f(z, c)
 
         if abs(z1 - z) <= inv_radius
@@ -146,41 +215,6 @@ end
 # Coloring Algorithms for the Complex Projective Line
 # --------------------------------------------------------------------------------------- #
 
-const Point = MVector{2, ComplexF64}
-
-const Mobius = SMatrix{2, 2, ComplexF64}
-
-function to_complex(pt::Point)
-    return pt[1] / pt[2]
-end
-
-function hyperbolic(fixed_pt1, fixed_pt2, scale_factor)
-    pt1 = normalize(fixed_pt1)
-    pt2 = normalize(fixed_pt2)
-
-    return Mobius(
-        pt1[1] * pt2[2] - scale_factor * pt2[1] * pt1[2],
-        (1 - scale_factor) * pt1[2] * pt2[2],
-        (scale_factor - 1) * pt1[1] * pt2[1],
-        scale_factor * pt1[1] * pt2[2] - pt2[1] * pt1[2]
-    )
-end
-
-function distance(pt1::Point, pt2::Point)
-	return norm(pt1[1] * pt2[2] - pt1[2] * pt2[1])
-end
-
-function orbit(f::Function, pt::Point, c::Point, length::Int)
-    points = Vector{Point}(undef, length)
-    points[1] = pt
-
-    for i in 2:length
-        points[i] = f(points[i - 1], c)
-    end
-
-    return points
-end
-
 struct NearbyPoints
     close::Bool
     iterations::Int
@@ -191,7 +225,7 @@ end
 function find_period_multiple(f::Function, pt::Point, c::Point, ε::Real, max_iter::Integer)
     slow = fast = pt
 
-    for period_multiple in 1:max_iter
+    for period_multiple = 1:max_iter
         slow = f(slow, c)
         fast = f(f(fast, c), c)
 
@@ -201,8 +235,15 @@ function find_period_multiple(f::Function, pt::Point, c::Point, ε::Real, max_it
     return NearbyPoints(false, max_iter, slow, fast)
 end
 
-function iterate_slow_until_close(f::Function, slow::Point, fast::Point, c::Point, ε::Real, max_iter::Integer)
-    for period in 1:max_iter
+function iterate_slow_until_close(
+    f::Function,
+    slow::Point,
+    fast::Point,
+    c::Point,
+    ε::Real,
+    max_iter::Integer,
+)
+    for period = 1:max_iter
         slow = f(slow, c)
 
         distance(slow, fast) <= ε && return NearbyPoints(true, period, slow, fast)
@@ -211,9 +252,16 @@ function iterate_slow_until_close(f::Function, slow::Point, fast::Point, c::Poin
     return NearbyPoints(false, max_iter, slow, fast)
 end
 
-function orbit_until_close(f::Function, orbiter::Point, reference::Point, c::Point, ε::Real, max_iter::Integer)
+function orbit_until_close(
+    f::Function,
+    orbiter::Point,
+    reference::Point,
+    c::Point,
+    ε::Real,
+    max_iter::Integer,
+)
     orbit = [orbiter]
-    for _ in 1:max_iter
+    for _ = 1:max_iter
         orbiter = f(orbiter, c)
         distance(orbiter, reference) <= ε && return orbit
         push!(orbit, orbiter)
@@ -223,9 +271,14 @@ function orbit_until_close(f::Function, orbiter::Point, reference::Point, c::Poi
 end
 
 function iterate_both_until_close(
-    f::Function, pt1::Point, pt2::Point, c::Point, ε::Real, max_iter::Integer
+    f::Function,
+    pt1::Point,
+    pt2::Point,
+    c::Point,
+    ε::Real,
+    max_iter::Integer,
 )
-    for iteration in 0:max_iter
+    for iteration = 0:max_iter
         distance(pt1, pt2) <= ε && return NearbyPoints(true, iteration, pt1, pt2)
 
         pt1 = f(pt1, c)
@@ -240,13 +293,20 @@ function multiplier(f::Function, pt::Point, c::Point, ε::Real, max_iter::Intege
     first_approach = find_period_multiple(f, pt, c, ε, max_iter)
     !first_approach.close && return DEFAULT_VALUE
 
-    period_data = iterate_slow_until_close(f, first_approach.slow, first_approach.fast, c, ε, max_iter)
+    period_data = iterate_slow_until_close(
+        f,
+        first_approach.slow,
+        first_approach.fast,
+        c,
+        ε,
+        max_iter,
+    )
     !period_data.close && return DEFAULT_VALUE
 
     preperiod_data = iterate_both_until_close(f, pt, period_data.fast, c, ε, max_iter)
     !preperiod_data.close && return DEFAULT_VALUE
 
-	return mod((preperiod_data.iterations / period_data.iterations) / 64.0, 1.0)
+    return mod((preperiod_data.iterations / period_data.iterations) / 64.0, 1.0)
 end
 
 struct FatouIterationDistance
@@ -255,13 +315,24 @@ struct FatouIterationDistance
     component_index::Int
 end
 
-function convergence_time(f::Function, pt::Point, c::Point, attractors, ε::Real, max_iter::Integer)
+function convergence_time(
+    f::Function,
+    pt::Point,
+    c::Point,
+    attractors,
+    ε::Real,
+    max_iter::Integer,
+)
     pt = normalize(pt)
 
-    for preperiod in 0:max_iter
+    for preperiod = 0:max_iter
         for (component_index, attractor) in enumerate(attractors)
             for limit_pt in attractor
-                distance(pt, limit_pt) <= ε && return FatouIterationDistance(preperiod, length(attractor), component_index)
+                distance(pt, limit_pt) <= ε && return FatouIterationDistance(
+                    preperiod,
+                    length(attractor),
+                    component_index,
+                )
             end
         end
 

@@ -6,21 +6,21 @@ using InteractiveUtils
 
 # ╔═╡ 4a085b76-da75-11ee-2b50-07309082fb46
 begin
-	# The lines below activate the environment defined in Project.toml
-	# It will install the necessary packages the first time it runs.
-	using Pkg
-	Pkg.activate(@__DIR__)
+    # The lines below activate the environment defined in Project.toml
+    # It will install the necessary packages the first time it runs.
+    using Pkg
+    Pkg.activate(@__DIR__)
 
-	# Includes the file with definitions and imports the relevant modules
-	include("./src/MandelMakie.jl")
-	using .MandelMakie
+    # Includes the file with definitions and imports the relevant modules
+    include("./src/MandelMakie.jl")
+    using .MandelMakie
 
-	# The next lines are necessary because Pluto does not expose the exported variables of a local package. You can skip those lines if you are loading this package into the REPL or Jupyter notebook.
-	Viewer = MandelMakie.Viewer
-	Viewer3D = MandelMakie.Viewer3D
-	Julia3D = MandelMakie.Julia3D
-	Fatou3D = MandelMakie.Fatou3D
-	set_parameter! = MandelMakie.set_parameter!
+    # The next lines are necessary because Pluto does not expose the exported variables of a local package. You can skip those lines if you are loading this package into the REPL or Jupyter notebook.
+    Viewer = MandelMakie.Viewer
+    Viewer3D = MandelMakie.Viewer3D
+    Julia3D = MandelMakie.Julia3D
+    Fatou3D = MandelMakie.Fatou3D
+    set_parameter! = MandelMakie.set_parameter!
 end
 
 # ╔═╡ 1ba72fef-d5c4-4da4-9c17-4ba0096bf968
@@ -39,7 +39,7 @@ First, you define a family of complex maps (don't put type annotations)
 f(z, λ) = z^2 + λ / z^2
 
 # ╔═╡ 89426560-0874-45a2-a2dd-6b2a044faabb
-crit(λ) = λ^(1/4)
+crit(λ) = λ^(1 / 4)
 
 # ╔═╡ 6b1c8547-06de-4bb7-9062-0826ad04b92e
 md"""
@@ -47,7 +47,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-viewer = Viewer(f; crit=crit, mandel_diameter=1.0)
+viewer = Viewer(f; crit = crit, mandel_diameter = 1.0)
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true
@@ -61,7 +61,10 @@ Another example would be the family ``g(z, \lambda)`` given by applying the Newt
 """
 
 # ╔═╡ ea959fbb-23d7-484f-932d-a64fe7130046
-g(z, λ) = z - (z-1)*(z-λ)*(z+λ) / ((z-1)*(z-λ) + (z-1)*(z+λ) + (z+λ)*(z-λ))
+g(z, λ) =
+    z -
+    (z - 1) * (z - λ) * (z + λ) /
+    ((z - 1) * (z - λ) + (z - 1) * (z + λ) + (z + λ) * (z - λ))
 
 # ╔═╡ 259aebbe-a6ac-4b86-8a27-f12e104c3092
 # ╠═╡ disabled = true

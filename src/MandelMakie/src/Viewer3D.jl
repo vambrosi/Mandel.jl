@@ -52,7 +52,7 @@ end
 
 function update_colors!(vertex_colors, vertices, f_proj, c::Point, mobius, state)
     Threads.@threads for i in eachindex(vertices)
-        pt = vector_to_point(normalize(vertices[i]); mobius=mobius)
+        pt = vector_to_point(normalize(vertices[i]); mobius = mobius)
         @inbounds vertex_colors[][i] = multiplier(f_proj, pt, c, state.ε, state.max_iter)
     end
     notify(vertex_colors)
@@ -60,8 +60,9 @@ end
 
 function update_colors!(vertex_colors, vertices, f_proj, crit::Function, mobius, state)
     Threads.@threads for i in eachindex(vertices)
-        c = vector_to_point(normalize(vertices[i]); mobius=mobius)
-        @inbounds vertex_colors[][i] = multiplier(f_proj, crit(c), c, state.ε, state.max_iter)
+        c = vector_to_point(normalize(vertices[i]); mobius = mobius)
+        @inbounds vertex_colors[][i] =
+            multiplier(f_proj, crit(c), c, state.ε, state.max_iter)
     end
     notify(vertex_colors)
 end
@@ -86,17 +87,17 @@ function arc(v0, v1, segments)
         t = pi / segments
         arc_steps[2] = cos(t) * v_start + sin(t) * u
 
-    # Otherwise pick the first point along the arc containing v_start and v_end
+        # Otherwise pick the first point along the arc containing v_start and v_end
     else
         # First vector after v_start (slerp formula)
-        ϕ = acos(clamp(v_start ⋅ v_end/(norm(v_start) * norm(v_end)), -1, 1))
+        ϕ = acos(clamp(v_start ⋅ v_end / (norm(v_start) * norm(v_end)), -1, 1))
         t = 1 / segments # how far to walk along the arc
         arc_steps[2] = 1 / sin(ϕ) * (sin((1 - t) * ϕ) * v_start + sin(t * ϕ) * v_end)
     end
 
     # Other vectors (by reflecting pt_{i-2} across pt_{i-1} along the arc)
     dot_product = 2 * arc_steps[1] ⋅ arc_steps[2]
-    for i in 3:segments
+    for i = 3:segments
         arc_steps[i] = dot_product * arc_steps[i-1] - arc_steps[i-2]
     end
 
@@ -104,7 +105,7 @@ function arc(v0, v1, segments)
 end
 
 function View3D(figure, f_proj, c, state; is_mandel, mark)
-    scene = LScene(figure, show_axis=false)
+    scene = LScene(figure, show_axis = false)
 
     _mesh = meshGB(Tesselation(Sphere(Point3f(0), 1), 800))
     vertices = coordinates(_mesh)
@@ -121,54 +122,79 @@ function View3D(figure, f_proj, c, state; is_mandel, mark)
     mesh!(
         scene,
         _mesh,
-        color=vertex_colors,
-        colormap=:twilight,
-        colorrange=(0.0, 1.0),
-        shading=FastShading,
-        inspectable=false,
+        color = vertex_colors,
+        colormap = :twilight,
+        colorrange = (0.0, 1.0),
+        shading = FastShading,
+        inspectable = false,
     )
 
     camera = Camera3D(
         scene.scene,
-        eyeposition=Vec3f(0, 0, -3),
-        upvector=Vec3f(0, -1, 0),
-        fixed_axis=false,
-        center=false,
+        eyeposition = Vec3f(0, 0, -3),
+        upvector = Vec3f(0, -1, 0),
+        fixed_axis = false,
+        center = false,
     )
 
     focus_vector = @lift(normalize($(camera.eyeposition)))
-    focus_point = @lift(vector_to_point($focus_vector; mobius=$mobius))
-    focus_antipode_point = @lift(vector_to_point(- $focus_vector; mobius=$mobius))
+    focus_point = @lift(vector_to_point($focus_vector; mobius = $mobius))
+    focus_antipode_point = @lift(vector_to_point(-$focus_vector; mobius = $mobius))
 
     mark_point = isfinite(mark) ? Observable(Point(mark, 1)) : Observable(Point(1, 0))
 
     path_length = Observable{Int}(1)
-    path_points = is_mandel ? @lift([$mark_point]) : @lift(orbit(f_proj, $mark_point, $c, $path_length))
-    path_vectors = @lift(1.001 .* point_to_vector.($path_points; mobius=$inv_mobius))
+    path_points =
+        is_mandel ? @lift([$mark_point]) :
+        @lift(orbit(f_proj, $mark_point, $c, $path_length))
+    path_vectors = @lift(1.001 .* point_to_vector.($path_points; mobius = $inv_mobius))
 
     trace = @lift begin
         segments = 20
         trace = Vector{Vec3f}(undef, ($path_length - 1) * segments + 1)
-        for i in 2:$path_length
-            v1 = $path_vectors[i - 1]
+        for i = 2:$path_length
+            v1 = $path_vectors[i-1]
             v2 = $path_vectors[i]
-            trace[(i-2) * segments + 1 : (i-1) * segments] = 1.005 .*  arc(v1, v2, segments)
+            trace[(i-2)*segments+1:(i-1)*segments] = 1.005 .* arc(v1, v2, segments)
         end
 
         trace[end] = $path_vectors[end]
         return trace
     end
 
-    scatter!(scene, focus_vector, color=:red, overdraw=true, marker='+', markersize=15, glowwidth=1, glowcolor=:white,
-        inspector_label=(self, i, p) -> string(to_complex(vector_to_point(normalize(p); mobius=mobius[]))))
-    scatter!(scene, path_vectors, color=:blue, glowwidth=2, glowcolor=:white,
-        inspector_label=(self, i, p) -> string(to_complex(vector_to_point(normalize(p); mobius=mobius[]))))
-    lines!(scene, trace, color=:blue, linewidth = 2, inspectable=false)
+    scatter!(
+        scene,
+        focus_vector,
+        color = :red,
+        overdraw = true,
+        marker = '+',
+        markersize = 15,
+        glowwidth = 1,
+        glowcolor = :white,
+        inspector_label = (self, i, p) ->
+            string(to_complex_plane(vector_to_point(normalize(p); mobius = mobius[]))),
+    )
+    scatter!(
+        scene,
+        path_vectors,
+        color = :blue,
+        glowwidth = 2,
+        glowcolor = :white,
+        inspector_label = (self, i, p) ->
+            string(to_complex_plane(vector_to_point(normalize(p); mobius = mobius[]))),
+    )
+    lines!(scene, trace, color = :blue, linewidth = 2, inspectable = false)
 
     return View3D(
-        scene, camera, vertex_colors, mobius,
-        focus_point, focus_antipode_point, mark_point,
-        path_points, path_length
+        scene,
+        camera,
+        vertex_colors,
+        mobius,
+        focus_point,
+        focus_antipode_point,
+        mark_point,
+        path_points,
+        path_length,
     )
 end
 
@@ -186,26 +212,26 @@ end
 function put_menu!(figure, view)
     menu = GridLayout(
         figure,
-        width=Relative(0.95),
-        valign=0.97,
-        tellheight=false,
-        tellwidth=false,
-        default_colgap=8,
+        width = Relative(0.95),
+        valign = 0.97,
+        tellheight = false,
+        tellwidth = false,
+        default_colgap = 8,
     )
 
-    zoominbutton = Button(menu[1, 1], label="⌕₊", width=30)
+    zoominbutton = Button(menu[1, 1], label = "⌕₊", width = 30)
 
     on(zoominbutton.clicks) do _
         view.mobius[] = hyperbolic(view.focus[], view.focus_antipode[], 0.5) * view.mobius[]
     end
 
-    zoomoutbutton = Button(menu[1, 2], label="⌕₋", width=30)
+    zoomoutbutton = Button(menu[1, 2], label = "⌕₋", width = 30)
 
     on(zoomoutbutton.clicks) do _
         view.mobius[] = hyperbolic(view.focus[], view.focus_antipode[], 2.0) * view.mobius[]
     end
 
-    resetbutton = Button(menu[1, 3], label="↺", width=30)
+    resetbutton = Button(menu[1, 3], label = "↺", width = 30)
 
     on(resetbutton.clicks) do _
         focus = point_to_vector(view.focus[])
@@ -215,7 +241,7 @@ function put_menu!(figure, view)
         update_cam!(view.scene.scene, 3 * focus, Vec3f(0, 0, 0), v)
     end
 
-    markbutton = Button(menu[1, 4], label="⋅", width=30)
+    markbutton = Button(menu[1, 4], label = "⋅", width = 30)
 
     on(markbutton.clicks) do _
         view.mark[] = view.focus[]
@@ -241,10 +267,10 @@ function put_julia_menu!(menu, julia)
     return menu
 end
 
-function Viewer3D(f::Function; crit=0.0im, c=0.0im)
+function Viewer3D(f::Function; crit = 0.0im, c = 0.0im)
     rational_map = RationalMap(f, crit)
     state = State(1e-4, 200)
-    figure = Figure(size=(1000, 560))
+    figure = Figure(size = (1000, 560))
 
     DataInspector(figure)
 
@@ -254,16 +280,16 @@ function Viewer3D(f::Function; crit=0.0im, c=0.0im)
         rational_map.f_proj,
         Observable(rational_map.crit),
         state;
-        is_mandel=true,
-        mark=c,
+        is_mandel = true,
+        mark = c,
     )
     julia = View3D(
         figure[1, 2],
         rational_map.f_proj,
         mandel.mark,
         state;
-        is_mandel=false,
-        mark=0.0im,
+        is_mandel = false,
+        mark = 0.0im,
     )
 
     rowsize!(figure.layout, 1, Aspect(1, 1))
@@ -286,11 +312,11 @@ struct Julia3D <: AbstractViewer3D
     figure::Figure
     state::State
     julia::View3D
-    reset
+    reset::Any
 end
 
-function Julia3D(f::Function, parameter::Number=0.0im)
-    if hasmethod(f, Tuple{ComplexF64, ComplexF64})
+function Julia3D(f::Function, parameter::Number = 0.0im)
+    if hasmethod(f, Tuple{ComplexF64,ComplexF64})
         g = (z, c) -> f(z, c)
     elseif hasmethod(f, ComplexF64)
         g = (z, _) -> f(z)
@@ -300,7 +326,7 @@ function Julia3D(f::Function, parameter::Number=0.0im)
 
     rational_map = RationalMap(g, 0.0im)
     state = State(1e-4, 200)
-    figure = Figure(size=(500, 560))
+    figure = Figure(size = (500, 560))
 
     DataInspector(figure)
 
@@ -309,8 +335,8 @@ function Julia3D(f::Function, parameter::Number=0.0im)
         rational_map.f_proj,
         Observable(Point(parameter, 1)),
         state;
-        is_mandel=false,
-        mark=0.0im,
+        is_mandel = false,
+        mark = 0.0im,
     )
 
     rowsize!(figure.layout, 1, Aspect(1, 1))
