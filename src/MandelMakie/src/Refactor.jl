@@ -57,22 +57,16 @@ function extend_function(f::Function)
 end
 
 function extend_family(f::Function)
-    if hasmethod(f, ComplexF64) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
-        h = (z, c) -> f(z)
-    else
-        h = (z, c) -> f(z, c)
-    end
-
     @variables u, v, c, d
-    frac = simplify(h(u / v, c / d))
+    frac = simplify(f(u / v, c / d))
     value = Symbolics.value(frac)
 
     num, den = Symbolics.arguments(value)
     fu = build_function(num, u, v, c, d, expression=Val{false})
     fv = build_function(den, u, v, c, d, expression=Val{false})
 
-    g(z::ComplexF64, c::ComplexF64) = h(z, c)
-    g(z::Point, c::ComplexF64) = normalize(Point(fu(z..., c, 1), fv(z..., c, 1)))
+    g(z::Number, c::Number) = f(z, c)
+    g(z::Point, c::Number) = normalize(Point(fu(z..., c, 1), fv(z..., c, 1)))
     g(z::Point, c::Point) = normalize(Point(fu(z..., c...), fv(z..., c...)))
 
     return g
@@ -86,18 +80,24 @@ struct DynamicalSystem
     map::Function
     critical_point::Function
 
-    function DynamicalSystem(map::Function, critical_point::Function)
-        return new(extend_family(map), extend_function(critical_point))
+    function DynamicalSystem(f::Function, critical_point::Function)
+        if hasmethod(f, ComplexF64) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
+            h = (z, c) -> f(z)
+        else
+            h = (z, c) -> f(z, c)
+        end
+
+        return new(extend_family(h), extend_function(critical_point))
     end
 end
 
-function DynamicalSystem(map::Function, c::Number)
+function DynamicalSystem(f::Function, c::Number)
     c = convert(ComplexF64, c)
-    f = let c = c
+    g = let c = c
         _ -> c
     end
 
-    return DynamicalSystem(map, f)
+    return DynamicalSystem(f, g)
 end
 
 struct Attractor
@@ -223,6 +223,7 @@ mutable struct Options
     orbit_length::Int
     critical_length::Int
     compact_view::Bool
+    is_family::Bool
     projective_plot::Bool
     coloring_algorithm::Function
 end
@@ -488,7 +489,20 @@ function translate_axis!(axis, z)
     translate!(axis.yaxis.elements[:axisline], 0, 0, z + 1)
 end
 
-function create_frames!(figure, options, mandel, julia)
+function create_frames!(figure, options, mandel::Nothing, julia)
+    julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
+    axis = Axis(figure[1, 1][1, 1], aspect=1, limits=julia_limits)
+    translate_axis!(axis, 0)
+
+    hidedecorations!(axis)
+    deregister_interaction!(axis, :rectanglezoom)
+    deregister_interaction!(axis, :limitreset)
+    deregister_interaction!(axis, :dragpan)
+
+    return nothing, Frame(axis, julia, Dict())
+end
+
+function create_frames!(figure, options, mandel::MandelView, julia)
     mandel_limits = (0.5, 0.5 + mandel.pixels, 0.5, 0.5 + mandel.pixels)
     julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
 
@@ -722,80 +736,46 @@ end
 
 function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
     layout = GridLayout(figure[2, 1], tellwidth=false)
+    button_shift = options.is_family ? 2 : 0
 
     labels = Dict(
-        :max_iter => Label(layout[1, 3], "Maximum\nIterations:"),
-        :orbit_len => Label(layout[1, 5], "Orbit\nLength:"),
-        :critical_length => Label(layout[1, 7], "Critical Point\nOrbit Length:"),
-        :convergence_radius => Label(layout[1, 9], "Convergence\nRadius:"),
+        :max_iter => Label(layout[1, button_shift + 1], "Maximum\nIterations:"),
+        :orbit_len => Label(layout[1, button_shift + 3], "Orbit\nLength:"),
+        :critical_length => Label(layout[1, button_shift + 5], "Critical Point\nOrbit Length:"),
+        :convergence_radius => Label(layout[1, button_shift + 7], "Convergence\nRadius:"),
     )
 
-    inputs = Dict(
-        :switch_layout => Button(layout[1, 1], label="↰", halign=:left),
-        :switch_positions => Button(layout[1, 2], label="↔", halign=:left),
+    inputs = Dict{Symbol, Any}(
         :max_iter => Textbox(
-            layout[1, 4],
+            layout[1, button_shift + 2],
             width=60,
             placeholder=string(options.max_iterations),
             validator=Int,
         ),
         :orbit_len => Textbox(
-            layout[1, 6],
+            layout[1, button_shift + 4],
             width=60,
             placeholder=string(options.orbit_length),
             validator=Int,
         ),
         :critical_length => Textbox(
-            layout[1, 8],
+            layout[1, button_shift + 6],
             width=60,
             placeholder=string(options.orbit_length),
             validator=Int,
         ),
         :convergence_radius => Textbox(
-            layout[1, 10],
+            layout[1, button_shift + 8],
             width=60,
             placeholder=string(options.convergence_radius),
             validator=Float64,
         ),
     )
 
-    on(inputs[:switch_layout].clicks, priority=300) do event
-        if options.compact_view
-            left_frame.axis.width = nothing
-            left_frame.axis.height = nothing
-            left_frame.axis.valign = :center
-            left_frame.axis.halign = :center
-
-            figure[1, 1][1, 1] = left_frame.axis
-            figure[1, 1][1, 2] = right_frame.axis
-
-            inputs[:switch_layout].label = "↳"
-        else
-            left_frame.axis.width = Relative(0.3)
-            left_frame.axis.height = Relative(0.3)
-            left_frame.axis.valign = 0.01
-            left_frame.axis.halign = 0.01
-
-            figure[1, 1][1, 1] = left_frame.axis
-            figure[1, 1][1, 1] = right_frame.axis
-
-            trim!(contents(figure[1, 1])...)
-            inputs[:switch_layout].label = "↰"
-        end
-
-        options.compact_view = !options.compact_view
-    end
-
-    on(inputs[:switch_positions].clicks, priority=300) do event
-        left_frame.view[], right_frame.view[] = right_frame.view[], left_frame.view[]
-        create_plot!(left_frame)
-        create_plot!(right_frame)
-    end
-
     on(inputs[:max_iter].stored_string) do s
         options.max_iterations = parse(Int, s)
         update_view!(julia, d_system, options)
-        update_view!(mandel, d_system, options)
+        options.is_family && update_view!(mandel, d_system, options)
     end
 
     on(inputs[:orbit_len].stored_string) do s
@@ -816,7 +796,45 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
     on(inputs[:convergence_radius].stored_string) do s
         options.convergence_radius = parse(Float64, s)
         update_view!(julia, d_system, options)
-        update_view!(mandel, d_system, options)
+        options.is_family && update_view!(mandel, d_system, options)
+    end
+
+    if options.is_family
+        inputs[:switch_layout] = Button(layout[1, 1], label="↰", halign=:left)
+        inputs[:switch_positions] = Button(layout[1, 2], label="↔", halign=:left)
+
+        on(inputs[:switch_layout].clicks, priority=300) do event
+            if options.compact_view
+                left_frame.axis.width = nothing
+                left_frame.axis.height = nothing
+                left_frame.axis.valign = :center
+                left_frame.axis.halign = :center
+
+                figure[1, 1][1, 1] = left_frame.axis
+                figure[1, 1][1, 2] = right_frame.axis
+
+                inputs[:switch_layout].label = "↳"
+            else
+                left_frame.axis.width = Relative(0.3)
+                left_frame.axis.height = Relative(0.3)
+                left_frame.axis.valign = 0.01
+                left_frame.axis.halign = 0.01
+
+                figure[1, 1][1, 1] = left_frame.axis
+                figure[1, 1][1, 1] = right_frame.axis
+
+                trim!(contents(figure[1, 1])...)
+                inputs[:switch_layout].label = "↰"
+            end
+
+            options.compact_view = !options.compact_view
+        end
+
+        on(inputs[:switch_positions].clicks, priority=300) do event
+            left_frame.view[], right_frame.view[] = right_frame.view[], left_frame.view[]
+            create_plot!(left_frame)
+            create_plot!(right_frame)
+        end
     end
 
     return inputs
@@ -876,10 +894,10 @@ struct Viewer
     options::Options
 
     figure::Figure
-    left_frame::Frame
+    left_frame::Union{Nothing, Frame}
     right_frame::Frame
 
-    mandel::MandelView
+    mandel::Union{Nothing, MandelView}
     julia::JuliaView
     inputs::Dict{Symbol,Any}
 
@@ -893,14 +911,23 @@ struct Viewer
         julia_diameter=4.0,
         compact_view=true,
         grid_width=800,
-        coloring_algorithm=:escape_time,
+        coloring_algorithm=:projective_convergence,
     )
 
+        is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
+
+        algs = Dict(
+            :plane_convergence => (false, to_color ∘ multiplier),
+            :projective_convergence => (true, to_color ∘ multiplier),
+        )
+
+        projective_plot, algorithm = algs[coloring_algorithm]
+
         d_system = DynamicalSystem(f, crit)
-        options = Options(1e-3, 200, 1, 1, compact_view, true, to_color ∘ multiplier)
+        options = Options(1e-3, 200, 1, 1, compact_view, is_family, projective_plot, algorithm)
         figure = Figure(size=(750, 650))
 
-        mandel =
+        mandel = !is_family ? nothing :
             MandelView(center=mandel_center, diameter=mandel_diameter, pixels=grid_width)
 
         julia = JuliaView(
@@ -910,18 +937,23 @@ struct Viewer
             pixels=grid_width,
         )
 
-        mandel.points[] = [julia.parameter]
         julia.marks[] = [d_system.critical_point(julia.parameter)]
         pick_orbit!(julia, d_system, options, julia.points[][begin])
 
         left_frame, right_frame = create_frames!(figure, options, mandel, julia)
-        create_plot!(left_frame)
+
+        if is_family
+            add_frame_events!(right_frame, left_frame, d_system, options, julia)
+            add_frame_events!(left_frame, left_frame, d_system, options, julia)
+
+            create_plot!(left_frame)
+            update_view!(mandel, d_system, options)
+            mandel.points[] = [julia.parameter]
+        else
+            add_frame_events!(right_frame, right_frame, d_system, options, julia)
+        end
+
         create_plot!(right_frame)
-
-        add_frame_events!(left_frame, left_frame, d_system, options, julia)
-        add_frame_events!(right_frame, left_frame, d_system, options, julia)
-
-        update_view!(mandel, d_system, options)
         update_view!(julia, d_system, options)
 
         colgap!(content(figure[1, 1]), 10)
