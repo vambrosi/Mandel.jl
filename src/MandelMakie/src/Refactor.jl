@@ -48,7 +48,7 @@ function extend_function(f::Function)
         fu = build_function(num, u, v, expression=Val{false})
         fv = build_function(den, u, v, expression=Val{false})
 
-        h = _ -> normalize(Point(fu(z...), fv(z...)))
+        h = z -> normalize(Point(fu(z...), fv(z...)))
     end
 
     g(z::ComplexF64) = f(z)
@@ -101,12 +101,12 @@ function DynamicalSystem(f::Function, c::Number)
 end
 
 struct Attractor
-    cycle::Vector
+    cycle::Vector{ComplexF64}
     multiplier::Union{Nothing,ComplexF64}
     power::Union{Nothing,Int}
 end
 
-const empty_attractor = Attractor([], nothing, nothing)
+const empty_attractor = Attractor(ComplexF64[], nothing, nothing)
 
 function iscloseby(z, attractor, ε)
     for w in attractor.cycle
@@ -120,14 +120,14 @@ function convergence_time(f, z, c, attractors, ε, max_iterations)
     for iteration in 0:max_iterations
         for attractor in attractors
             if iscloseby(z, attractor, ε)
-                return iteration, attractor
+                return iteration, z, attractor
             end
         end
 
         z = f(z, c)
     end
 
-    return max_iterations + 1, empty_attractor
+    return max_iterations + 1, z, empty_attractor
 end
 
 const PointLike = Union{ComplexF64,Point}
@@ -182,7 +182,7 @@ end
 
 const MaybeAttractorApproach = Union{Nothing,AttractorApproach}
 
-function multiplier(f, z0, c, ε, max_iterations)::MaybeAttractorApproach
+function multiplier(f, z0, c, _, ε, max_iterations)::MaybeAttractorApproach
     points = period_multiple_apart(f, z0, c, ε, max_iterations)
     isnothing(points) && return nothing
 
@@ -207,6 +207,11 @@ function to_color(approach::AttractorApproach)
     return mod(approach.preperiod / approach.period / 64.0, 1.0)
 end
 
+function to_color(iterations::Integer, z::Number, attractor::Attractor)
+    attractor == empty_attractor && return DEFAULT_COLOR_LEVEL
+    mod((iterations + 1.0 - log(attractor.power, log(abs(z)))) / 64.0, 1.0)
+end
+
 to_color(approach::Nothing) = return DEFAULT_COLOR_LEVEL
 
 import Dates
@@ -226,6 +231,7 @@ mutable struct Options
     is_family::Bool
     projective_plot::Bool
     coloring_algorithm::Function
+    attractors::Vector{Attractor}
 end
 
 mutable struct MandelView <: View
@@ -359,6 +365,7 @@ function mandel_slice!(array, j, f, crit, corner, step, pxs, options)
             f,
             crit(c),
             c,
+            options.attractors,
             options.convergence_radius,
             options.max_iterations,
         )
@@ -402,6 +409,7 @@ function julia_slice!(array, j, f, c, corner, step, pxs, options)
             f,
             z,
             c,
+            options.attractors,
             options.convergence_radius,
             options.max_iterations,
         )
@@ -886,8 +894,8 @@ directly.
 - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if `false` \
 they are shown side-by-side.
 
-- `coloring_algorithm = :escape_time`: Chooses the coloring method for both plots. \
-The options are `:escape_time`, `:stop_time`, `:escape_preperiod`.
+- `coloring_algorithm = :plane_convergence`: Chooses the coloring method for both plots. \
+The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`.
 """
 struct Viewer
     d_system::DynamicalSystem
@@ -916,7 +924,9 @@ struct Viewer
 
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
 
+        escape_time(args...) = to_color(convergence_time(args...)...)
         algs = Dict(
+            :escape_time => (false, escape_time),
             :plane_convergence => (false, to_color ∘ multiplier),
             :projective_convergence => (true, to_color ∘ multiplier),
         )
@@ -924,7 +934,8 @@ struct Viewer
         projective_plot, algorithm = algs[coloring_algorithm]
 
         d_system = DynamicalSystem(f, crit)
-        options = Options(1e-3, 200, 1, 1, compact_view, is_family, projective_plot, algorithm)
+        attractors = [Attractor([∞], 0, 2)]
+        options = Options(1e-3, 200, 1, 1, compact_view, is_family, projective_plot, algorithm, attractors)
         figure = Figure(size=(750, 650))
 
         mandel = !is_family ? nothing :
