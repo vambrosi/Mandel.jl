@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.36
+# v0.19.45
 
 using Markdown
 using InteractiveUtils
@@ -10,7 +10,6 @@ begin
 	# It will install the necessary packages the first time it runs.
 	using Pkg
 	Pkg.activate(@__DIR__)
-	Pkg.instantiate()
 
 	# Includes the file with definitions and imports the relevant modules
 	include("./src/MandelMakie.jl")
@@ -70,7 +69,10 @@ Viewer(p2, mandel_center=-1)
   ╠═╡ =#
 
 # ╔═╡ 130ce106-d086-4c4e-af9d-9369208e2562
+# ╠═╡ disabled = true
+#=╠═╡
 Viewer3D(p2)
+  ╠═╡ =#
 
 # ╔═╡ 79cbbb8b-8add-4d95-87f2-a9d825494636
 md"""
@@ -109,16 +111,46 @@ Viewer(per3)
 Viewer3D(per3)
   ╠═╡ =#
 
+# ╔═╡ a9c743b4-7214-4b4d-b229-39aea38215bb
+md"""
+# The ``\mathrm{Per}_4(0)`` family
+"""
+
+# ╔═╡ b72a25ca-92a4-4950-88a9-e027335fbe9a
+md"""
+This is the parametrization from Milnor's 93 paper *Quadratic Rational Maps*. The fixed cycle is
+```math
+0 \overset{2}{\longmapsto} \infty \longmapsto 1 \longmapsto \rho \longmapsto 0
+```
+and the free critical point is at
+```math
+c = \frac{4\rho^2-2\rho}{-1+\rho+\rho^2}.
+```
+Note that $c$ is a quadratic function of $\rho$.
+"""
+
+# ╔═╡ 93eb1b62-e7ca-4969-8a1e-5902d509b8a4
+per4(z,ρ) = (z-ρ)*(z-(2ρ-1)/(ρ-1))/z^2
+
+# ╔═╡ b4481ee2-42d9-437f-b452-7632c52afbd0
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer(per4,crit=(ρ->(4ρ^2-2ρ)/(-1+ρ+ρ^2)))
+  ╠═╡ =#
+
 # ╔═╡ 9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 md"""
-## Census manifolds
+## Census maps
 """
 
 # ╔═╡ f9c1ce04-81de-4458-8bf1-8225956b1011
 f49(z) = (z/3-1)^3/(z-1)
 
 # ╔═╡ 1991d152-f45b-4b00-ab29-32f6d80c8997
+# ╠═╡ disabled = true
+#=╠═╡
 Fatou3D(f49, show_critical_points=true)
+  ╠═╡ =#
 
 # ╔═╡ f966a1a4-8b1a-4f84-8452-50ac7b0024e9
 f51(z) = 4/27 * (z-1)^3/z
@@ -153,6 +185,10 @@ md"""
 # ╠═363f547e-715c-4b5e-b657-5c41f8e674ca
 # ╠═dd5a428d-c4af-4121-8905-902ca0ec1310
 # ╠═ef15c50e-4158-4716-994b-c8885d9f81af
+# ╟─a9c743b4-7214-4b4d-b229-39aea38215bb
+# ╟─b72a25ca-92a4-4950-88a9-e027335fbe9a
+# ╠═93eb1b62-e7ca-4969-8a1e-5902d509b8a4
+# ╠═b4481ee2-42d9-437f-b452-7632c52afbd0
 # ╠═9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
 # ╠═1991d152-f45b-4b00-ab29-32f6d80c8997
