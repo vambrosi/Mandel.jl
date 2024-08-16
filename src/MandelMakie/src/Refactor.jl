@@ -1,4 +1,5 @@
 using StaticArraysCore, LinearAlgebra, Polynomials
+import Dates
 
 # --------------------------------------------------------------------------------------- #
 # Complex Plane Definitions
@@ -101,15 +102,23 @@ function DynamicalSystem(f::Function, c::Number)
 end
 
 struct Attractor
-    cycle::Vector{ComplexF64}
-    multiplier::Union{Nothing,ComplexF64}
-    power::Union{Nothing,Int}
+    cycle::Union{ComplexF64, Vector{ComplexF64}}
+    multiplier::ComplexF64
+    power::Int
 end
 
-const empty_attractor = Attractor(ComplexF64[], nothing, nothing)
+const MaybeAttractor = Union{Nothing, Attractor}
 
-function iscloseby(z, attractor, ε)
-    for w in attractor.cycle
+const empty_attractor = nothing
+
+function iscloseby(z, w::ComplexF64, ε)
+    distance(z, w) < ε && return true
+
+    return false
+end
+
+function iscloseby(z, cycle::Vector, ε)
+    for w in cycle
         distance(z, w) < ε && return true
     end
 
@@ -119,7 +128,7 @@ end
 function convergence_time(f, z, c, attractors, ε, max_iterations)
     for iteration in 0:max_iterations
         for attractor in attractors
-            if iscloseby(z, attractor, ε)
+            if iscloseby(z, attractor.cycle, ε)
                 return iteration, z, attractor
             end
         end
@@ -175,14 +184,14 @@ function iterate_both_until_close(f, z, w, c, ε, max_iterations)::MaybeCloseBy
     return nothing
 end
 
-struct AttractorApproach
+struct OrbitData
     preperiod::Int
     period::Int
 end
 
-const MaybeAttractorApproach = Union{Nothing,AttractorApproach}
+const MaybeOrbitData = Union{Nothing,OrbitData}
 
-function multiplier(f, z0, c, _, ε, max_iterations)::MaybeAttractorApproach
+function multiplier(f, z0, c, _, ε, max_iterations)::MaybeOrbitData
     points = period_multiple_apart(f, z0, c, ε, max_iterations)
     isnothing(points) && return nothing
 
@@ -194,7 +203,7 @@ function multiplier(f, z0, c, _, ε, max_iterations)::MaybeAttractorApproach
     isnothing(points) && return nothing
 
     preperiod = points.iterations
-    return AttractorApproach(preperiod, period)
+    return OrbitData(preperiod, period)
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -203,18 +212,19 @@ end
 
 const DEFAULT_COLOR_LEVEL = 0.5
 
-function to_color(approach::AttractorApproach)
+function to_color(approach::OrbitData)
     return mod(approach.preperiod / approach.period / 64.0, 1.0)
 end
 
-function to_color(iterations::Integer, z::Number, attractor::Attractor)
+function to_color(iterations::Integer, z::Number, attractor::MaybeAttractor)
     attractor == empty_attractor && return DEFAULT_COLOR_LEVEL
     mod((iterations + 1.0 - log(attractor.power, log(abs(z)))) / 64.0, 1.0)
 end
 
-to_color(approach::Nothing) = return DEFAULT_COLOR_LEVEL
+to_color(::Nothing) = DEFAULT_COLOR_LEVEL
 
-import Dates
+escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)...)
+convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
 
 # --------------------------------------------------------------------------------------- #
 # Views of Mandelbrot and Julia Sets
@@ -424,9 +434,9 @@ function update_grid!(
     step::Float64,
     options::Options,
 )
-    futures = Vector{Task}(undef, view.pixels)
     parameter = options.projective_plot ?
-                to_projective(view.parameter) : view.parameter
+        to_projective(view.parameter) : view.parameter
+    futures = Vector{Task}(undef, view.pixels)
 
     @inbounds for j = 1:view.pixels
         futures[j] = Threads.@spawn julia_slice!(
@@ -924,17 +934,16 @@ struct Viewer
 
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
 
-        escape_time(args...) = to_color(convergence_time(args...)...)
         algs = Dict(
             :escape_time => (false, escape_time),
-            :plane_convergence => (false, to_color ∘ multiplier),
-            :projective_convergence => (true, to_color ∘ multiplier),
+            :plane_convergence => (false, convergence_color),
+            :projective_convergence => (true, convergence_color),
         )
 
         projective_plot, algorithm = algs[coloring_algorithm]
 
         d_system = DynamicalSystem(f, crit)
-        attractors = [Attractor([∞], 0, 2)]
+        attractors = [Attractor(∞, 0, 2)]
         options = Options(1e-3, 200, 1, 1, compact_view, is_family, projective_plot, algorithm, attractors)
         figure = Figure(size=(750, 650))
 
