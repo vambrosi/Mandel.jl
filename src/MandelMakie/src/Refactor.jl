@@ -46,8 +46,8 @@ function extend_function(f::Function)
         end
     else
         num, den = Symbolics.arguments(value)
-        fu = build_function(num, u, v, expression=Val{false})
-        fv = build_function(den, u, v, expression=Val{false})
+        fu = build_function(num, u, v, expression = Val{false})
+        fv = build_function(den, u, v, expression = Val{false})
 
         h = z -> normalize(Point(fu(z...), fv(z...)))
     end
@@ -63,8 +63,8 @@ function extend_family(f::Function)
     value = Symbolics.value(frac)
 
     num, den = Symbolics.arguments(value)
-    fu = build_function(num, u, v, c, d, expression=Val{false})
-    fv = build_function(den, u, v, c, d, expression=Val{false})
+    fu = build_function(num, u, v, c, d, expression = Val{false})
+    fv = build_function(den, u, v, c, d, expression = Val{false})
 
     g(z::Number, c::Number) = f(z, c)
     g(z::Point, c::Number) = normalize(Point(fu(z..., c, 1), fv(z..., c, 1)))
@@ -102,12 +102,12 @@ function DynamicalSystem(f::Function, c::Number)
 end
 
 struct Attractor
-    cycle::Union{ComplexF64, Vector{ComplexF64}}
+    cycle::Union{ComplexF64,Vector{ComplexF64}}
     multiplier::ComplexF64
     power::Int
 end
 
-const MaybeAttractor = Union{Nothing, Attractor}
+const MaybeAttractor = Union{Nothing,Attractor}
 
 const empty_attractor = nothing
 
@@ -126,7 +126,7 @@ function iscloseby(z, cycle::Vector, ε)
 end
 
 function convergence_time(f, z, c, attractors, ε, max_iterations)
-    for iteration in 0:max_iterations
+    for iteration = 0:max_iterations
         for attractor in attractors
             if iscloseby(z, attractor.cycle, ε)
                 return iteration, z, attractor
@@ -153,7 +153,7 @@ const MaybeCloseBy = Union{Nothing,CloseBy}
 function period_multiple_apart(f, z, c, ε, max_iterations)::MaybeCloseBy
     slow = fast = z
 
-    for n in 1:max_iterations
+    for n = 1:max_iterations
         slow = f(slow, c)
         fast = f(f(fast, c), c)
 
@@ -164,7 +164,7 @@ function period_multiple_apart(f, z, c, ε, max_iterations)::MaybeCloseBy
 end
 
 function iterate_until_close(f, z, w, c, ε, max_iterations)::MaybeCloseBy
-    for n in 1:max_iterations
+    for n = 1:max_iterations
         z = f(z, c)
 
         distance(z, w) < ε && return CloseBy(n, z, w)
@@ -174,7 +174,7 @@ function iterate_until_close(f, z, w, c, ε, max_iterations)::MaybeCloseBy
 end
 
 function iterate_both_until_close(f, z, w, c, ε, max_iterations)::MaybeCloseBy
-    for n in 1:max_iterations
+    for n = 1:max_iterations
         z = f(z, c)
         w = f(w, c)
 
@@ -226,6 +226,12 @@ to_color(::Nothing) = DEFAULT_COLOR_LEVEL
 escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)...)
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
 
+struct ColoringData
+    method::Function
+    is_projective::Bool
+    attractors::Vector{Attractor}
+end
+
 # --------------------------------------------------------------------------------------- #
 # Views of Mandelbrot and Julia Sets
 # --------------------------------------------------------------------------------------- #
@@ -239,9 +245,6 @@ mutable struct Options
     critical_length::Int
     compact_view::Bool
     is_family::Bool
-    projective_plot::Bool
-    coloring_algorithm::Function
-    attractors::Vector{Attractor}
 end
 
 mutable struct MandelView <: View
@@ -256,7 +259,9 @@ mutable struct MandelView <: View
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
-    function MandelView(; center=0.0im, diameter=4.0, pixels=1000)
+    coloring_data::ColoringData
+
+    function MandelView(; center, diameter, pixels, coloring_data)
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
@@ -264,7 +269,17 @@ mutable struct MandelView <: View
         points = ComplexF64[center]
         marks = ComplexF64[]
 
-        return new(center, diameter, pixels, center, diameter, color_levels, points, marks)
+        return new(
+            center,
+            diameter,
+            pixels,
+            center,
+            diameter,
+            color_levels,
+            points,
+            marks,
+            coloring_data,
+        )
     end
 end
 
@@ -281,7 +296,9 @@ mutable struct JuliaView <: View
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
-    function JuliaView(; center=0.0im, diameter=4.0, parameter=0.0im, pixels=1000)
+    coloring_data::ColoringData
+
+    function JuliaView(; center, diameter, parameter, pixels, coloring_data)
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
@@ -299,6 +316,7 @@ mutable struct JuliaView <: View
             color_levels,
             points,
             marks,
+            coloring_data,
         )
     end
 end
@@ -365,17 +383,17 @@ function corner_and_step(view::View)
     return corner, step
 end
 
-function mandel_slice!(array, j, f, crit, corner, step, pxs, options)
+function mandel_slice!(array, j, f, crit, corner, step, pxs, coloring_data, options)
     @inbounds for i = 1:pxs
-        c = options.projective_plot ?
-            to_projective(corner + step * complex(i, j)) :
+        c =
+            coloring_data.is_projective ? to_projective(corner + step * complex(i, j)) :
             corner + step * complex(i, j)
 
-        array[i, j] = options.coloring_algorithm(
+        array[i, j] = coloring_data.method(
             f,
             crit(c),
             c,
-            options.attractors,
+            coloring_data.attractors,
             options.convergence_radius,
             options.max_iterations,
         )
@@ -401,6 +419,7 @@ function update_grid!(
             corner,
             step,
             view.pixels,
+            view.coloring_data,
             options,
         )
     end
@@ -409,17 +428,17 @@ function update_grid!(
     return nothing
 end
 
-function julia_slice!(array, j, f, c, corner, step, pxs, options)
+function julia_slice!(array, j, f, c, corner, step, pxs, coloring_data, options)
     @inbounds for i = 1:pxs
-        z = options.projective_plot ?
-            to_projective(corner + step * complex(i, j)) :
+        z =
+            coloring_data.is_projective ? to_projective(corner + step * complex(i, j)) :
             corner + step * complex(i, j)
 
-        array[i, j] = options.coloring_algorithm(
+        array[i, j] = coloring_data.method(
             f,
             z,
             c,
-            options.attractors,
+            coloring_data.attractors,
             options.convergence_radius,
             options.max_iterations,
         )
@@ -434,8 +453,8 @@ function update_grid!(
     step::Float64,
     options::Options,
 )
-    parameter = options.projective_plot ?
-        to_projective(view.parameter) : view.parameter
+    parameter =
+        view.coloring_data.is_projective ? to_projective(view.parameter) : view.parameter
     futures = Vector{Task}(undef, view.pixels)
 
     @inbounds for j = 1:view.pixels
@@ -447,6 +466,7 @@ function update_grid!(
             corner,
             step,
             view.pixels,
+            view.coloring_data,
             options,
         )
     end
@@ -509,7 +529,7 @@ end
 
 function create_frames!(figure, options, mandel::Nothing, julia)
     julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
-    axis = Axis(figure[1, 1][1, 1], aspect=1, limits=julia_limits)
+    axis = Axis(figure[1, 1][1, 1], aspect = 1, limits = julia_limits)
     translate_axis!(axis, 0)
 
     hidedecorations!(axis)
@@ -524,8 +544,8 @@ function create_frames!(figure, options, mandel::MandelView, julia)
     mandel_limits = (0.5, 0.5 + mandel.pixels, 0.5, 0.5 + mandel.pixels)
     julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
 
-    left_axis = Axis(figure[1, 1][1, 1], aspect=1, limits=mandel_limits)
-    right_axis = Axis(figure[1, 1][1, 1], aspect=1, limits=julia_limits)
+    left_axis = Axis(figure[1, 1][1, 1], aspect = 1, limits = mandel_limits)
+    right_axis = Axis(figure[1, 1][1, 1], aspect = 1, limits = julia_limits)
     translate_axis!(left_axis, 10)
     translate_axis!(right_axis, 0)
 
@@ -553,10 +573,10 @@ function create_plot!(frame::Frame)
     heatmap!(
         frame.axis,
         view.color_levels,
-        colormap=:twilight,
-        colorrange=(0.0, 1.0),
-        inspectable=false,
-        inspector_label=(self, i, p) -> let
+        colormap = :twilight,
+        colorrange = (0.0, 1.0),
+        inspectable = false,
+        inspector_label = (self, i, p) -> let
             z = to_complex_plane(view, p)
             "x: $(real(z))\ny: $(imag(z))"
         end,
@@ -567,13 +587,13 @@ function create_plot!(frame::Frame)
         return Point2f.(xs, ys)
     end
 
-    lines!(frame.axis, point_vectors, color=(:red, 0.5), inspectable=false)
+    lines!(frame.axis, point_vectors, color = (:red, 0.5), inspectable = false)
 
     scatter!(
         frame.axis,
         point_vectors,
-        color=(:red, 1.0),
-        inspector_label=(self, i, p) -> let
+        color = (:red, 1.0),
+        inspector_label = (self, i, p) -> let
             z = to_complex_plane(view, p)
             "x: $(real(z))\ny: $(imag(z))"
         end,
@@ -584,13 +604,13 @@ function create_plot!(frame::Frame)
         return Point2f.(xs, ys)
     end
 
-    lines!(frame.axis, mark_vectors, color=(:blue, 0.5), inspectable=false)
+    lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
 
     scatter!(
         frame.axis,
         mark_vectors,
-        color=(:blue, 1.0),
-        inspector_label=(self, i, p) -> let
+        color = (:blue, 1.0),
+        inspector_label = (self, i, p) -> let
             z = to_complex_plane(view, p)
             "x: $(real(z))\ny: $(imag(z))"
         end,
@@ -623,13 +643,13 @@ end
 
 function save_view(filename::String, view::View)
     pxs = view.pixels
-    fig = Figure(figure_padding=0, size=(pxs, pxs))
-    ax = Axis(fig[1, 1], aspect=AxisAspect(1))
+    fig = Figure(figure_padding = 0, size = (pxs, pxs))
+    ax = Axis(fig[1, 1], aspect = AxisAspect(1))
 
     hidedecorations!(ax)
     hidespines!(ax)
 
-    heatmap!(ax, view.color_levels[], colormap=:twilight, colorrange=(0.0, 1.0))
+    heatmap!(ax, view.color_levels[], colormap = :twilight, colorrange = (0.0, 1.0))
 
     Makie.save(filename, fig)
 end
@@ -652,7 +672,7 @@ function add_frame_events!(
     to_world_at_start = z -> to_world(scene, z)
 
     is_zooming = false
-    zooming = Timer(identity, 0.1)
+    zooming = Timer(_ -> zoom!(frame, d_system, options), 0.1)
 
     is_topframe = frame == topframe
     z_level = is_topframe ? 10 : 0
@@ -717,7 +737,7 @@ function add_frame_events!(
         end
     end
 
-    on(events(scene).scroll, priority=100) do event
+    on(events(scene).scroll, priority = 100) do event
         if is_mouseinside(axis) &&
            !is_zooming &&
            (is_topframe || !is_mouseinside(topframe.axis))
@@ -753,40 +773,41 @@ function add_frame_events!(
 end
 
 function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
-    layout = GridLayout(figure[2, 1], tellwidth=false)
+    layout = GridLayout(figure[2, 1], tellwidth = false)
     button_shift = options.is_family ? 2 : 0
 
     labels = Dict(
-        :max_iter => Label(layout[1, button_shift + 1], "Maximum\nIterations:"),
-        :orbit_len => Label(layout[1, button_shift + 3], "Orbit\nLength:"),
-        :critical_length => Label(layout[1, button_shift + 5], "Critical Point\nOrbit Length:"),
-        :convergence_radius => Label(layout[1, button_shift + 7], "Convergence\nRadius:"),
+        :max_iter => Label(layout[1, button_shift+1], "Maximum\nIterations:"),
+        :orbit_len => Label(layout[1, button_shift+3], "Orbit\nLength:"),
+        :critical_length =>
+            Label(layout[1, button_shift+5], "Critical Point\nOrbit Length:"),
+        :convergence_radius => Label(layout[1, button_shift+7], "Convergence\nRadius:"),
     )
 
-    inputs = Dict{Symbol, Any}(
+    inputs = Dict{Symbol,Any}(
         :max_iter => Textbox(
-            layout[1, button_shift + 2],
-            width=60,
-            placeholder=string(options.max_iterations),
-            validator=Int,
+            layout[1, button_shift+2],
+            width = 60,
+            placeholder = string(options.max_iterations),
+            validator = Int,
         ),
         :orbit_len => Textbox(
-            layout[1, button_shift + 4],
-            width=60,
-            placeholder=string(options.orbit_length),
-            validator=Int,
+            layout[1, button_shift+4],
+            width = 60,
+            placeholder = string(options.orbit_length),
+            validator = Int,
         ),
         :critical_length => Textbox(
-            layout[1, button_shift + 6],
-            width=60,
-            placeholder=string(options.orbit_length),
-            validator=Int,
+            layout[1, button_shift+6],
+            width = 60,
+            placeholder = string(options.orbit_length),
+            validator = Int,
         ),
         :convergence_radius => Textbox(
-            layout[1, button_shift + 8],
-            width=60,
-            placeholder=string(options.convergence_radius),
-            validator=Float64,
+            layout[1, button_shift+8],
+            width = 60,
+            placeholder = string(options.convergence_radius),
+            validator = Float64,
         ),
     )
 
@@ -818,10 +839,10 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
     end
 
     if options.is_family
-        inputs[:switch_layout] = Button(layout[1, 1], label="↰", halign=:left)
-        inputs[:switch_positions] = Button(layout[1, 2], label="↔", halign=:left)
+        inputs[:switch_layout] = Button(layout[1, 1], label = "↰", halign = :left)
+        inputs[:switch_positions] = Button(layout[1, 2], label = "↔", halign = :left)
 
-        on(inputs[:switch_layout].clicks, priority=300) do event
+        on(inputs[:switch_layout].clicks, priority = 300) do event
             if options.compact_view
                 left_frame.axis.width = nothing
                 left_frame.axis.height = nothing
@@ -848,7 +869,7 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
             options.compact_view = !options.compact_view
         end
 
-        on(inputs[:switch_positions].clicks, priority=300) do event
+        on(inputs[:switch_positions].clicks, priority = 300) do event
             left_frame.view[], right_frame.view[] = right_frame.view[], left_frame.view[]
             create_plot!(left_frame)
             create_plot!(right_frame)
@@ -899,62 +920,71 @@ directly.
 
 - `julia_diameter = 4.0`: Initial diameter of the Julia plot.
 
-- `grid_width = 1000`: Width (and height) of the grid of complex numbers used to plot sets.
+- `grid_width = 800`: Width (and height) of the grid of complex numbers used to plot sets.
 
 - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if `false` \
 they are shown side-by-side.
 
-- `coloring_algorithm = :plane_convergence`: Chooses the coloring method for both plots. \
-The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`.
+- `mandel_coloring_method = :escape_time`: Chooses the coloring method for the Mandelbrot \
+plot. The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`.
+
+- `julia_coloring_method = :escape_time`: Same as for `mandel` version, but with two \
+extra options: `:plane_limiting_attractor`, and `:projective_limiting_attractor`.
 """
 struct Viewer
     d_system::DynamicalSystem
     options::Options
 
     figure::Figure
-    left_frame::Union{Nothing, Frame}
+    left_frame::Union{Nothing,Frame}
     right_frame::Frame
 
-    mandel::Union{Nothing, MandelView}
+    mandel::Union{Nothing,MandelView}
     julia::JuliaView
     inputs::Dict{Symbol,Any}
 
     function Viewer(
         f;
-        crit=0.0im,
-        c=0.0im,
-        mandel_center=0.0im,
-        mandel_diameter=4.0,
-        julia_center=0.0im,
-        julia_diameter=4.0,
-        compact_view=true,
-        grid_width=800,
-        coloring_algorithm=:projective_convergence,
+        crit = 0.0im,
+        c = 0.0im,
+        mandel_center = 0.0im,
+        mandel_diameter = 4.0,
+        julia_center = 0.0im,
+        julia_diameter = 4.0,
+        compact_view = true,
+        grid_width = 800,
+        mandel_coloring_method = :escape_time,
+        julia_coloring_method = :escape_time,
     )
 
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
 
-        algs = Dict(
-            :escape_time => (false, escape_time),
-            :plane_convergence => (false, convergence_color),
-            :projective_convergence => (true, convergence_color),
+        coloring_data = Dict(
+            :escape_time => ColoringData(escape_time, false, [Attractor(∞, 0, 2)]),
+            :plane_convergence => ColoringData(convergence_color, false, Attractor[]),
+            :projective_convergence =>
+                ColoringData(convergence_color, false, Attractor[]),
         )
 
-        projective_plot, algorithm = algs[coloring_algorithm]
-
         d_system = DynamicalSystem(f, crit)
-        attractors = [Attractor(∞, 0, 2)]
-        options = Options(1e-3, 200, 1, 1, compact_view, is_family, projective_plot, algorithm, attractors)
-        figure = Figure(size=(750, 650))
+        options = Options(1e-3, 200, 1, 1, compact_view, is_family)
+        figure = Figure(size = (750, 650))
 
-        mandel = !is_family ? nothing :
-            MandelView(center=mandel_center, diameter=mandel_diameter, pixels=grid_width)
+        mandel =
+            !is_family ? nothing :
+            MandelView(
+                center = mandel_center,
+                diameter = mandel_diameter,
+                pixels = grid_width,
+                coloring_data = coloring_data[mandel_coloring_method],
+            )
 
         julia = JuliaView(
-            center=julia_center,
-            diameter=julia_diameter,
-            parameter=c,
-            pixels=grid_width,
+            center = julia_center,
+            diameter = julia_diameter,
+            parameter = c,
+            pixels = grid_width,
+            coloring_data = coloring_data[julia_coloring_method],
         )
 
         julia.marks[] = [d_system.critical_point(julia.parameter)]
