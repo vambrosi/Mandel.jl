@@ -1,4 +1,8 @@
-using StaticArraysCore, LinearAlgebra, Polynomials
+module Refactor
+
+export Viewer
+
+using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
 import Dates
 
 # --------------------------------------------------------------------------------------- #
@@ -1024,3 +1028,5 @@ struct Viewer
 end
 
 Base.show(io::IO, viewer::Viewer) = display(GLMakie.Screen(), viewer.figure)
+
+end

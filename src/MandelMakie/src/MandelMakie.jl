@@ -6,18 +6,18 @@ MandelMakie.jl is a module to explore complex dynamical systems. Its main functi
 """
 module MandelMakie
 
-# export Viewer, Viewer3D, set_parameter!
-export Viewer
+export Viewer, Viewer3D, Fatou3D, set_parameter!
 
 using GLMakie, Symbolics, Parameters
 
 import Base: show
 
-# include("Dynamics.jl")
-# include("Parser.jl")
-# include("Viewer2D.jl")
-# include("Viewer3D.jl")
-# include("Fatou3D.jl")
+include("Dynamics.jl")
+include("Parser.jl")
+include("Viewer3D.jl")
+include("Fatou3D.jl")
+
 include("Refactor.jl")
+using .Refactor
 
 end

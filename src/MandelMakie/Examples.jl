@@ -27,12 +27,12 @@ end
 md"""
 # Makie Examples
 
-Here we have some examples of how to use the Makie user interface of `Mandel.jl`. The last cell in this notebook imports all the necessary files and functions. If you prefer, you can add that cell to your own Pluto notebook (or make a copy of the notebook), then follow the instructions here to use the GUI.
+In this notebook, we have some examples of how to use the Makie user interface of `Mandel.jl`. The last cell in this notebook imports all the necessary files and functions. If you prefer, you can add that cell to your own Pluto notebook (or make a copy of the notebook), then follow the instructions here to use the GUI.
 """
 
 # ╔═╡ fb6c0e42-b256-47aa-a496-aa5e3e4a57cc
 md"""
-First, you define a family of complex maps (don't put type annotations)
+First, you define a family of complex maps
 """
 
 # ╔═╡ f49a6cef-86c9-4a47-a9ff-30588b3de27c
@@ -47,7 +47,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-viewer = Viewer(f; crit = crit, mandel_diameter = 1.0)
+Viewer(f; crit = crit, mandel_diameter = 1.0)
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true
@@ -84,36 +84,23 @@ md"""
 
 # ╔═╡ 922dfc20-4d14-4e8f-8b6d-639157828f1b
 md"""
-The `coloring` parameter in `Viewer` picks the coloring algorithm used in both the Mandelbrot and Julia set plots. The possible options are `:escape_time` (default), `:stop_time`, and `:escape_preperiod`.
+The `mandel_coloring_method` and `julia_coloring_method` parameters in `Viewer` pick the algorithm used in the respective plots. The possible options are `:escape_time` (default), `:plane_convergence`, and `:projective_convergence`.
 """
 
 # ╔═╡ 9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer((z,c) -> z^2 + c; mandel_center=-0.5, coloring_algorithm=:escape_preperiod)
+Viewer(
+	g;
+	crit=1/3,
+	mandel_coloring_method=:projective_convergence,
+	julia_coloring_method=:projective_convergence,
+)
   ╠═╡ =#
 
 # ╔═╡ 879a14f8-207c-4510-b94d-0e7f6f392175
 md"""
-The remaining optional parameters of `Viewer` determine the initial center and diameter of the plots, and the initial `c` used to plot the Julia set. Clicking on the reset buttons in the `Viewer` returns the plots to their initial center and diameter.
-"""
-
-# ╔═╡ 488a4334-a776-4a49-a800-93b13dfbce49
-# ╠═╡ disabled = true
-#=╠═╡
-Viewer(
-	(z,c) -> z^2 + c;
-	c=0.0im,
-	mandel_center=0.0im,
-	mandel_diam=4.0,
-	julia_center=0.0im,
-	julia_diam=4.0,
-)
-  ╠═╡ =#
-
-# ╔═╡ ad2e8d1e-deac-4457-bfcb-dc256a32cdae
-md"""
-The default parameters are shown in the cell above.
+To get more details about the `Viewer` function just type `?Viewer` in an empty cell.
 """
 
 # ╔═╡ 8a161348-be92-47cc-8e3c-62f74b8d96d2
@@ -210,8 +197,6 @@ julia = Julia3D(g, im)
 # ╟─922dfc20-4d14-4e8f-8b6d-639157828f1b
 # ╠═9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╟─879a14f8-207c-4510-b94d-0e7f6f392175
-# ╠═488a4334-a776-4a49-a800-93b13dfbce49
-# ╟─ad2e8d1e-deac-4457-bfcb-dc256a32cdae
 # ╟─8a161348-be92-47cc-8e3c-62f74b8d96d2
 # ╟─3ba77924-33c1-4d47-8367-379766a58a95
 # ╠═105f8b1b-de30-4f98-986f-9b667b87949b
