@@ -20,7 +20,6 @@ begin
 	Viewer3D = MandelMakie.Viewer3D
 	Julia3D = MandelMakie.Julia3D
 	Fatou3D = MandelMakie.Fatou3D
-	to_complex = MandelMakie.to_complex
 	set_parameter! = MandelMakie.set_parameter!
 end
 
