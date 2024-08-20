@@ -81,7 +81,7 @@ struct RationalMap
     end
 end
 
-function critical_points(func, parameter)
+function get_critical_points(func, parameter)
     @variables z, u, v, c
     f = func(z, c)
 

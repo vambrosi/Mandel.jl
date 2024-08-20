@@ -103,7 +103,7 @@ function Fatou3D(f::Function, c::Number = 0.0im; show_critical_points = false)
     end
 
     f_proj = to_point_family(g)
-    crit_pts = critical_points(g, c)
+    crit_pts = get_critical_points(g, c)
 
     figure = Figure(size = (600, 650))
     scene = LScene(figure[1, 1], show_axis = false)

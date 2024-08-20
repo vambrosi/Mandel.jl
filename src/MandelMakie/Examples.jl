@@ -84,7 +84,7 @@ md"""
 
 # ╔═╡ 922dfc20-4d14-4e8f-8b6d-639157828f1b
 md"""
-The `mandel_coloring_method` and `julia_coloring_method` parameters in `Viewer` pick the algorithm used in the respective plots. The possible options are `:escape_time` (default), `:plane_convergence`, and `:projective_convergence`.
+The `coloring_method` parameter in `Viewer` picks the algorithm used to plot the Mandelbrot and Julia sets. The possible options are `:escape_time` (default), `:plane_convergence`, and `:projective_convergence`. You can also pick the algorithms separately by using `mandel_coloring_method` and `julia_coloring_method`, which override `coloring_method`.
 """
 
 # ╔═╡ 9ce5fbe4-2985-4665-8a30-682d93ac52ba
@@ -93,8 +93,7 @@ The `mandel_coloring_method` and `julia_coloring_method` parameters in `Viewer` 
 Viewer(
 	g;
 	crit=1/3,
-	mandel_coloring_method=:projective_convergence,
-	julia_coloring_method=:projective_convergence,
+	coloring_method=:projective_convergence,
 )
   ╠═╡ =#
 

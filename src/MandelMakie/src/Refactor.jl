@@ -1,15 +1,16 @@
 module Refactor
 
-export Viewer
+export Viewer, critical_points
 
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
+using GLMakie.Colors: LCHab
 import Dates
 
 # --------------------------------------------------------------------------------------- #
 # Complex Plane Definitions
 # --------------------------------------------------------------------------------------- #
 
-const ∞ = NaN + NaN * im
+const ∞ = Inf + Inf * im
 
 function distance(z::Number, w::Number)
     !isfinite(w) && return 1 / abs(z)
@@ -62,13 +63,13 @@ function extend_function(f::Function)
 end
 
 function extend_family(f::Function)
-    @variables u, v, c, d
-    frac = simplify(f(u / v, c / d))
+    @variables u, v, a, b
+    frac = simplify(f(u / v, a / b))
     value = Symbolics.value(frac)
 
     num, den = Symbolics.arguments(value)
-    fu = build_function(num, u, v, c, d, expression = Val{false})
-    fv = build_function(den, u, v, c, d, expression = Val{false})
+    fu = build_function(num, u, v, a, b, expression = Val{false})
+    fv = build_function(den, u, v, a, b, expression = Val{false})
 
     g(z::Number, c::Number) = f(z, c)
     g(z::Point, c::Number) = normalize(Point(fu(z..., c, 1), fv(z..., c, 1)))
@@ -107,6 +108,7 @@ end
 
 struct Attractor
     cycle::Union{ComplexF64,Vector{ComplexF64}}
+    period::Int
     multiplier::ComplexF64
     power::Int
 end
@@ -211,6 +213,85 @@ function multiplier(f, z0, c, _, ε, max_iterations)::MaybeOrbitData
 end
 
 # --------------------------------------------------------------------------------------- #
+# Finding Attractors
+# --------------------------------------------------------------------------------------- #
+
+function coeffs(polynomial, z)
+    higher_terms = polynomial
+    coefficients = ComplexF64[]
+
+    cutoff_test = 0
+    while !isequal(higher_terms, 0) || cutoff_test > 20
+        coefficient = substitute(higher_terms, Dict(z => 0))
+        push!(coefficients, Symbolics.value(coefficient))
+
+        higher_terms -= coefficient
+        higher_terms = simplify(higher_terms / z)
+        cutoff_test += 1
+    end
+
+    return coefficients
+end
+
+function critical_points(func, parameter)
+    @variables z, u, v, c
+    f = func(z, c)
+
+    # Hack to write rational function as a ratio of polynomials
+    # (Not sure it works on all cases.)
+    f =
+        f |>
+        (x -> substitute(x, Dict(z => u / v))) |>
+        simplify |>
+        (x -> substitute(x, Dict(u => z, v => 1)))
+
+    # Get numerator and denominator polynomials
+    p, q = f |> Symbolics.value |> Symbolics.arguments
+
+    p = Polynomial(coeffs(substitute(p, Dict(c => parameter)), z))
+    q = Polynomial(coeffs(substitute(q, Dict(c => parameter)), z))
+
+    num = Polynomials.derivative(p) * q - p * Polynomials.derivative(q)
+    points = unique!(roots(num))
+
+    d = max(Polynomials.degree(p), Polynomials.degree(q))
+    length(points) < 2 * d - 2 && push!(points, ∞)
+    return points
+end
+
+function attracting_cycle(f, z::T, c, ε, max_iterations) where T <: PointLike
+    points = period_multiple_apart(f, z, c, ε, max_iterations)
+    isnothing(points) && return T[]
+
+    orbiter = points.z
+    reference = points.w
+
+    orbit = [orbiter]
+    for _ = 1:max_iterations
+        orbiter = f(orbiter, c)
+        distance(orbiter, reference) <= ε && return orbit
+        push!(orbit, orbiter)
+    end
+
+    return orbit
+end
+
+function attractors(f, c)
+    crit_pts = critical_points(f, c)
+
+    attractors = Attractor[]
+    for z in crit_pts
+        pt = isfinite(z) ? to_projective(z) : Point(1, 0)
+        proj_orbit = attracting_cycle(f, pt, c, 1e-4, 500)
+        orbit = to_complex_plane.(proj_orbit)
+
+        length(orbit) > 0 && push!(attractors, Attractor(orbit, length(orbit), 0.0im, 0))
+    end
+
+    return attractors
+end
+
+# --------------------------------------------------------------------------------------- #
 # Coloring Algorithms
 # --------------------------------------------------------------------------------------- #
 
@@ -222,7 +303,7 @@ end
 
 function to_color(iterations::Integer, z::Number, attractor::MaybeAttractor)
     attractor == empty_attractor && return DEFAULT_COLOR_LEVEL
-    mod((iterations + 1.0 - log(attractor.power, log(abs(z)))) / 64.0, 1.0)
+    mod((iterations / attractor.period + 1.0 - log(attractor.power, log(abs(z)))) / 64.0, 1.0)
 end
 
 to_color(::Nothing) = DEFAULT_COLOR_LEVEL
@@ -234,6 +315,51 @@ struct ColoringData
     method::Function
     is_projective::Bool
     attractors::Vector{Attractor}
+end
+
+const base_hue_chroma = [
+    #RGB CA736C 202 115 108 red
+    (38.35791098655309, 29.49442824523494),
+    #RGB 5794D0 87 148 208 blue
+    (36.822489073365745, 266.89189631383687),
+    #RGB 47A477 71 164 119 green
+    (41.31205868565174, 158.3817555910295),
+    #RGB 8D9741 141 151 65 yellow
+    (46.2028504263141, 110.51854840517339),
+    #RGB 00A2AF 0 162 175 cyan
+    (34.439876883846594, 209.09162086774987),
+    #RGB BC73A4 188 115 164 magenta
+    (38.49553456026353, 338.47504267487597),
+    #RGB BA823A 186 130 58 orange
+    (48.58788683488929, 72.5301368954557),
+    #RGB 9481CC 148 129 204 purple
+    (43.17999997459473, 302.8931595387337),
+]
+
+function create_color_gradients(attractors)
+    n_colors = length(attractors)
+    color_gradients = Dict{Attractor, Vector{LCHab{Float64}}}()
+
+    if n_colors == 1
+        attractor = attractors[1]
+        color_gradients[attractor] = convert.(LCHab, cgrad(:twilight))
+
+    elseif n_colors < 9
+        for (color_index, attractor) in enumerate(attractors)
+            chroma, hue = base_hue_chroma[color_index]
+            gradient = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
+            color_gradients[attractor] = gradient
+        end
+
+    else
+        for (color_index, attractor) in enumerate(attractors)
+            chroma, hue = 40, mod(360 * (color_index - 1) / n + 30, 360)
+            gradient = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
+            color_gradients[attractor] = gradient
+        end
+    end
+
+    return color_gradients
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -326,7 +452,7 @@ mutable struct JuliaView <: View
 end
 
 # --------------------------------------------------------------------------------------- #
-# Change of Coordinates between Complex Plane and Pixel Space
+# Change of Coordinates between Complex Plane, Projective Line, and Pixel Space
 # --------------------------------------------------------------------------------------- #
 
 function to_complex_plane(view::View, pixel_vector)
@@ -337,6 +463,13 @@ function to_complex_plane(view::View, pixel_vector)
     b = (y + 0.5 - view.pixels / 2) * upp
 
     return view.center + complex(a, b)
+end
+
+function to_complex_plane(pt::Point)
+    z = pt[1] / pt[2]
+
+    !isfinite(z) && return ∞
+    return z
 end
 
 function to_pixel_space(view::View, z::Number)
@@ -929,11 +1062,13 @@ directly.
 - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if `false` \
 they are shown side-by-side.
 
-- `mandel_coloring_method = :escape_time`: Chooses the coloring method for the Mandelbrot \
-plot. The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`.
+- `coloring_method = :escape_time`: Chooses the coloring method for both plots. \
+The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`.
 
-- `julia_coloring_method = :escape_time`: Same as for `mandel` version, but with two \
-extra options: `:plane_limiting_attractor`, and `:projective_limiting_attractor`.
+- `mandel_coloring_method = nothing`: Chooses the coloring method for the Mandelbrot \
+plot. If it is `nothing` it uses the method specified in `coloring_method`.
+
+- `julia_coloring_method = nothing`: Same as for the `mandel` version.
 """
 struct Viewer
     d_system::DynamicalSystem
@@ -957,14 +1092,17 @@ struct Viewer
         julia_diameter = 4.0,
         compact_view = true,
         grid_width = 800,
-        mandel_coloring_method = :escape_time,
-        julia_coloring_method = :escape_time,
+        coloring_method = :escape_time,
+        mandel_coloring_method = nothing,
+        julia_coloring_method = nothing,
     )
+        isnothing(mandel_coloring_method) && (mandel_coloring_method = coloring_method)
+        isnothing(julia_coloring_method) && (julia_coloring_method = coloring_method)
 
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
 
         coloring_data = Dict(
-            :escape_time => ColoringData(escape_time, false, [Attractor(∞, 0, 2)]),
+            :escape_time => ColoringData(escape_time, false, [Attractor(∞, 1, 0, 2)]),
             :plane_convergence => ColoringData(convergence_color, false, Attractor[]),
             :projective_convergence =>
                 ColoringData(convergence_color, false, Attractor[]),
