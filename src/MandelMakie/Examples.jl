@@ -157,10 +157,7 @@ md"""
 """
 
 # ╔═╡ 6e3d25a8-08a5-4e4d-a26c-6fce6623cef9
-# ╠═╡ disabled = true
-#=╠═╡
 fatou = Fatou3D(g, im)
-  ╠═╡ =#
 
 # ╔═╡ cab73282-0e64-45eb-958b-92f03fb4c8ca
 # ╠═╡ disabled = true
