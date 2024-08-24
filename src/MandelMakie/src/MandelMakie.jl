@@ -6,7 +6,8 @@ MandelMakie.jl is a module to explore complex dynamical systems. Its main functi
 """
 module MandelMakie
 
-export Viewer, Viewer3D, Fatou3D, set_parameter!, critical_points
+export Viewer,
+    Viewer3D, Fatou3D, Attractor, set_parameter!, critical_points, find_attractors
 
 using GLMakie, Symbolics, Parameters
 

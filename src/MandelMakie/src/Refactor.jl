@@ -1,6 +1,6 @@
 module Refactor
 
-export Viewer, critical_points
+export Viewer, Attractor, find_attractors, critical_points
 
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
 using GLMakie.Colors: LCHab
@@ -34,7 +34,17 @@ end
 
 const Point = SVector{2,ComplexF64}
 
-to_projective(z) = normalize(Point(z, 1))
+function Base.show(io::IO, pt::Point)
+    z = pt[1] / pt[2]
+
+    isfinite(z) ? print(io, z) : print(io, "∞")
+end
+
+Base.show(io::IO, ::MIME"text/plain", pt::Point) =
+    print(io, "Point on the complex projective line:\n   ", pt)
+
+Base.convert(::Type{Point}, z::ComplexF64) =
+    isfinite(z) ? normalize(Point(z, 1)) : Point(1, 0)
 
 function distance(pt1::Point, pt2::Point)
     return norm(pt1[1] * pt2[2] - pt1[2] * pt2[1])
@@ -46,7 +56,8 @@ function extend_function(f::Function)
     value = Symbolics.value(frac)
 
     if value isa Number
-        h = let pt = to_projective(value)
+        h = let
+            pt = convert(Point, value)
             _ -> pt
         end
     else
@@ -106,47 +117,74 @@ function DynamicalSystem(f::Function, c::Number)
     return DynamicalSystem(f, g)
 end
 
-struct Attractor
-    cycle::Union{ComplexF64,Vector{ComplexF64}}
+const PointLike = Union{ComplexF64,Point}
+Base.convert(::Type{PointLike}, z::Number) = ComplexF64(z)
+Base.convert(::Type{ComplexF64}, z::Point) = to_complex_plane(z)
+
+struct Attractor{T}
+    cycle::Union{T,Vector{T}}
     period::Int
     multiplier::ComplexF64
     power::Int
 end
 
-const MaybeAttractor = Union{Nothing,Attractor}
+Attractor(c::T, m::Number, p::Integer) where {T} = Attractor{T}(c, 1, m, p)
+Attractor(c::Vector{T}, m::Number, p::Integer) where {T} = Attractor{T}(c, length(c), m, p)
+
+function Base.show(io::IO, attractor::Attractor{T}) where {T<:PointLike}
+    display_string = "... ↦ "
+
+    for z in attractor.cycle
+        display_string *= string(z) * " ↦ "
+    end
+
+    display_string *= "..."
+
+    print(io, display_string)
+end
+
+Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{ComplexF64}) =
+    print(io, "Attracting cycle in the complex plane:\n   ", attractor)
+
+Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{Point}) =
+    print(io, "Attracting cycle in the complex projective line:\n   ", attractor)
+
+function Base.convert(::Type{Attractor{ComplexF64}}, attractor::Attractor{Point})
+    cycle = convert(Vector{ComplexF64}, attractor.cycle)
+    return Attractor(cycle, attractor.multiplier, attractor.power)
+end
+
+const MaybeAttractor = Union{Nothing,Attractor{ComplexF64},Attractor{Point}}
 
 const empty_attractor = nothing
 
-function iscloseby(z, w::ComplexF64, ε)
-    distance(z, w) < ε && return true
+distance(z, attractor::Attractor{T}) where {T<:PointLike} = distance(z, attractor.cycle)
+distance(cycle1::Vector{T}, cycle2::Vector{T}) where {T<:PointLike} =
+    minimum([distance(z, w) for z in cycle1, w in cycle2])
+distance(z::T, cycle::Vector{T}) where {T<:PointLike} =
+    minimum([distance(z, w) for w in cycle])
 
-    return false
-end
-
-function iscloseby(z, cycle::Vector, ε)
-    for w in cycle
-        distance(z, w) < ε && return true
-    end
-
-    return false
-end
-
-function convergence_time(f, z, c, attractors, ε, max_iterations)
+function convergence_time(
+    f::Function,
+    z::T,
+    c::T,
+    attractors::Vector{Attractor{T}},
+    ε::Float64,
+    max_iterations::Int,
+)::Tuple{Int,Float64,MaybeAttractor} where {T<:PointLike}
     for iteration = 0:max_iterations
         for attractor in attractors
-            if iscloseby(z, attractor.cycle, ε)
-                return iteration, z, attractor
+            d = distance(z, attractor)
+            if d < ε
+                return iteration, d, attractor
             end
         end
 
         z = f(z, c)
     end
 
-    return max_iterations + 1, z, empty_attractor
+    return max_iterations + 1, ε, empty_attractor
 end
-
-const PointLike = Union{ComplexF64,Point}
-Base.convert(::Type{PointLike}, z::Number) = ComplexF64(z)
 
 struct CloseBy
     iterations::Int
@@ -255,11 +293,11 @@ function critical_points(func, parameter)
     points = unique!(roots(num))
 
     d = max(Polynomials.degree(p), Polynomials.degree(q))
-    length(points) < 2 * d - 2 && push!(points, ∞)
+    length(points) < 2 * d - 2 && pushfirst!(points, ∞)
     return points
 end
 
-function attracting_cycle(f, z::T, c, ε, max_iterations) where T <: PointLike
+function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
     points = period_multiple_apart(f, z, c, ε, max_iterations)
     isnothing(points) && return T[]
 
@@ -276,17 +314,36 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where T <: PointLike
     return orbit
 end
 
-function attractors(f, c)
-    crit_pts = critical_points(f, c)
+function find_attractors(f::Function; projective::Bool = false)
+    hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
 
-    attractors = Attractor[]
+    h = extend_family((z, c) -> f(z))
+
+    return find_attractors(h, 0.0im; projective = projective)
+end
+
+function find_attractors(f::Function, c::Number; projective::Bool = false)
+    # If it is not a family ignores the parameter
+    hasmethod(f, Tuple{ComplexF64,ComplexF64}) || return find_attractors(f)
+
+    # Extend the function, in case it was not extended previously
+    g = extend_family(f)
+
+    # Iterate critical points to find all attracting cycles
+    crit_pts = critical_points(g, c)
+
+    attractors = Attractor{Point}[]
     for z in crit_pts
-        pt = isfinite(z) ? to_projective(z) : Point(1, 0)
-        proj_orbit = attracting_cycle(f, pt, c, 1e-4, 500)
-        orbit = to_complex_plane.(proj_orbit)
+        pt = convert(Point, z)
+        orbit = attracting_cycle(g, pt, c, 1e-4, 1000)
 
-        length(orbit) > 0 && push!(attractors, Attractor(orbit, length(orbit), 0.0im, 0))
+        if length(orbit) > 0
+            is_repeat = any([distance(orbit, a) < 2e-4 for a in attractors])
+            !is_repeat && push!(attractors, Attractor(orbit, 0.0im, 0))
+        end
     end
+
+    projective || (attractors = convert(Vector{Attractor{ComplexF64}}, attractors))
 
     return attractors
 end
@@ -301,9 +358,12 @@ function to_color(approach::OrbitData)
     return mod(approach.preperiod / approach.period / 64.0, 1.0)
 end
 
-function to_color(iterations::Integer, z::Number, attractor::MaybeAttractor)
+function to_color(iterations::Integer, d::Number, attractor::MaybeAttractor)
     attractor == empty_attractor && return DEFAULT_COLOR_LEVEL
-    mod((iterations / attractor.period + 1.0 - log(attractor.power, log(abs(z)))) / 64.0, 1.0)
+    mod(
+        (iterations / attractor.period + 1.0 - log(attractor.power, -log(abs(d)))) / 64.0,
+        1.0,
+    )
 end
 
 to_color(::Nothing) = DEFAULT_COLOR_LEVEL
@@ -311,11 +371,13 @@ to_color(::Nothing) = DEFAULT_COLOR_LEVEL
 escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)...)
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
 
-struct ColoringData
+struct ColoringData{T}
     method::Function
-    is_projective::Bool
-    attractors::Vector{Attractor}
+    attractors::Vector{Attractor{T}}
+    update_attractors::Bool
 end
+
+attractor_type(::ColoringData{T}) where {T} = T
 
 const base_hue_chroma = [
     #RGB CA736C 202 115 108 red
@@ -338,7 +400,7 @@ const base_hue_chroma = [
 
 function create_color_gradients(attractors)
     n_colors = length(attractors)
-    color_gradients = Dict{Attractor, Vector{LCHab{Float64}}}()
+    color_gradients = Dict{Attractor,Vector{LCHab{Float64}}}()
 
     if n_colors == 1
         attractor = attractors[1]
@@ -347,14 +409,16 @@ function create_color_gradients(attractors)
     elseif n_colors < 9
         for (color_index, attractor) in enumerate(attractors)
             chroma, hue = base_hue_chroma[color_index]
-            gradient = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
+            gradient =
+                [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
             color_gradients[attractor] = gradient
         end
 
     else
         for (color_index, attractor) in enumerate(attractors)
             chroma, hue = 40, mod(360 * (color_index - 1) / n + 30, 360)
-            gradient = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
+            gradient =
+                [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
             color_gradients[attractor] = gradient
         end
     end
@@ -522,9 +586,7 @@ end
 
 function mandel_slice!(array, j, f, crit, corner, step, pxs, coloring_data, options)
     @inbounds for i = 1:pxs
-        c =
-            coloring_data.is_projective ? to_projective(corner + step * complex(i, j)) :
-            corner + step * complex(i, j)
+        c = convert(attractor_type(coloring_data), corner + step * complex(i, j))
 
         array[i, j] = coloring_data.method(
             f,
@@ -567,9 +629,7 @@ end
 
 function julia_slice!(array, j, f, c, corner, step, pxs, coloring_data, options)
     @inbounds for i = 1:pxs
-        z =
-            coloring_data.is_projective ? to_projective(corner + step * complex(i, j)) :
-            corner + step * complex(i, j)
+        z = convert(attractor_type(coloring_data), corner + step * complex(i, j))
 
         array[i, j] = coloring_data.method(
             f,
@@ -590,8 +650,7 @@ function update_grid!(
     step::Float64,
     options::Options,
 )
-    parameter =
-        view.coloring_data.is_projective ? to_projective(view.parameter) : view.parameter
+    parameter = convert(attractor_type(view.coloring_data), view.parameter)
     futures = Vector{Task}(undef, view.pixels)
 
     @inbounds for j = 1:view.pixels
@@ -639,6 +698,18 @@ function pick_parameter!(
     )
 
     mandel.points[] = [julia.parameter]
+
+    coloring_data = julia.coloring_data
+    if coloring_data.update_attractors
+        T = attractor_type(coloring_data)
+        attractor_list =
+            find_attractors(d_system.map, julia.parameter, projective = (T == Point))
+        julia.coloring_data = ColoringData{T}(
+            coloring_data.method,
+            attractor_list,
+            coloring_data.update_attractors,
+        )
+    end
 
     update_view!(julia, d_system, options)
     pick_orbit!(julia, d_system, options, julia.points[][begin])
@@ -1100,17 +1171,40 @@ struct Viewer
         isnothing(julia_coloring_method) && (julia_coloring_method = coloring_method)
 
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
-
-        coloring_data = Dict(
-            :escape_time => ColoringData(escape_time, false, [Attractor(∞, 1, 0, 2)]),
-            :plane_convergence => ColoringData(convergence_color, false, Attractor[]),
-            :projective_convergence =>
-                ColoringData(convergence_color, false, Attractor[]),
-        )
+        uses_attractors = split(string(julia_coloring_method), "_")[1] == "attractors"
 
         d_system = DynamicalSystem(f, crit)
         options = Options(1e-3, 200, 1, 1, compact_view, is_family)
         figure = Figure(size = (750, 650))
+
+        if uses_attractors
+            proj_attractors = find_attractors(d_system.map, c, projective = true)
+            plane_attractors = convert(Vector{Attractor{ComplexF64}}, proj_attractors)
+        else
+            proj_attractors = Attractor{Point}[]
+            plane_attractors = Attractor{ComplexF64}[]
+        end
+
+        coloring_data = Dict(
+            :escape_time =>
+                ColoringData{ComplexF64}(escape_time, [Attractor(∞, 0, 2)], false),
+            :plane_convergence => ColoringData{ComplexF64}(
+                convergence_color,
+                Attractor{ComplexF64}[],
+                false,
+            ),
+            :projective_convergence =>
+                ColoringData{Point}(convergence_color, Attractor{ComplexF64}[], false),
+            :plane_using_attractors =>
+                ColoringData{ComplexF64}(escape_time, plane_attractors, true),
+            :projective_using_attractors =>
+                ColoringData{Point}(escape_time, proj_attractors, true),
+        )
+
+        # Changes Mandelbrot set coloring method to a valid option
+        words = split(string(mandel_coloring_method), "_")
+        words[end] == "attractors" &&
+            (mandel_coloring_method = Symbol(words[1] * "_convergence"))
 
         mandel =
             !is_family ? nothing :

@@ -6,21 +6,21 @@ using InteractiveUtils
 
 # ╔═╡ 4a085b76-da75-11ee-2b50-07309082fb46
 begin
-	# The lines below activate the environment defined in Project.toml
-	# It will install the necessary packages the first time it runs.
-	using Pkg
-	Pkg.activate(@__DIR__)
+    # The lines below activate the environment defined in Project.toml
+    # It will install the necessary packages the first time it runs.
+    using Pkg
+    Pkg.activate(@__DIR__)
 
-	# Includes the file with definitions and imports the relevant modules
-	include("./src/MandelMakie.jl")
-	using .MandelMakie
+    # Includes the file with definitions and imports the relevant modules
+    include("./src/MandelMakie.jl")
+    using .MandelMakie
 
-	# The next lines are necessary because Pluto does not expose the exported variables of a local package. You can skip those lines if you are loading this package into the REPL or Jupyter notebook.
-	Viewer = MandelMakie.Viewer
-	Viewer3D = MandelMakie.Viewer3D
-	Julia3D = MandelMakie.Julia3D
-	Fatou3D = MandelMakie.Fatou3D
-	set_parameter! = MandelMakie.set_parameter!
+    # The next lines are necessary because Pluto does not expose the exported variables of a local package. You can skip those lines if you are loading this package into the REPL or Jupyter notebook.
+    Viewer = MandelMakie.Viewer
+    Viewer3D = MandelMakie.Viewer3D
+    Julia3D = MandelMakie.Julia3D
+    Fatou3D = MandelMakie.Fatou3D
+    set_parameter! = MandelMakie.set_parameter!
 end
 
 # ╔═╡ 1ba72fef-d5c4-4da4-9c17-4ba0096bf968
@@ -44,7 +44,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(q, mandel_center=-0.5)
+Viewer(q, mandel_center = -0.5)
   ╠═╡ =#
 
 # ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
@@ -59,12 +59,12 @@ md"""
 """
 
 # ╔═╡ dc859310-0b21-4ede-a740-2b285f52a3df
-p2(z,c) = (z^2-c)/(z^2-1)
+p2(z, c) = (z^2 - c) / (z^2 - 1)
 
 # ╔═╡ 8848c897-3fb7-4a7d-aa5f-d6b34438decb
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(p2, mandel_center=-1)
+Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0)
   ╠═╡ =#
 
 # ╔═╡ 130ce106-d086-4c4e-af9d-9369208e2562
@@ -79,15 +79,15 @@ md"""
 """
 
 # ╔═╡ fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
-devaney22(z,λ) = z^2 + λ/z^2
+devaney22(z, λ) = z^2 + λ / z^2
 
 # ╔═╡ 36714bb2-3622-47eb-a7b5-f4c99145bd59
-devaneycrit(λ) = λ^(1/4)
+devaneycrit(λ) = λ^(1 / 4)
 
 # ╔═╡ 1c99e13e-e034-4d55-91be-ec22f1125a3d
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(devaney22,crit=(λ->λ^(1/4)))
+Viewer(devaney22, crit = (λ -> λ^(1 / 4)), mandel_diameter = 1.0)
   ╠═╡ =#
 
 # ╔═╡ fa18fc4e-c7a7-4268-ab77-368a277d2ae6
@@ -96,12 +96,12 @@ md"""
 """
 
 # ╔═╡ 363f547e-715c-4b5e-b657-5c41f8e674ca
-per3(z,c) = (z^2 - 1  - c + c^3)/(z^2-c^2)
+per3(z, c) = (z^2 - 1 - c + c^3) / (z^2 - c^2)
 
 # ╔═╡ dd5a428d-c4af-4121-8905-902ca0ec1310
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(per3)
+Viewer(per3, mandel_diameter = 6.0)
   ╠═╡ =#
 
 # ╔═╡ ef15c50e-4158-4716-994b-c8885d9f81af
@@ -129,12 +129,12 @@ Note that $c$ is a quadratic function of $\rho$.
 """
 
 # ╔═╡ 93eb1b62-e7ca-4969-8a1e-5902d509b8a4
-per4(z,ρ) = (z-ρ)*(z-(2ρ-1)/(ρ-1))/z^2
+per4(z, ρ) = (z - ρ) * (z - (2ρ - 1) / (ρ - 1)) / z^2
 
 # ╔═╡ b4481ee2-42d9-437f-b452-7632c52afbd0
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(per4,crit=(ρ->(4ρ^2-2ρ)/(-1+ρ+ρ^2)))
+Viewer(per4, crit = (ρ -> (4ρ^2 - 2ρ) / (-1 + ρ + ρ^2)))
   ╠═╡ =#
 
 # ╔═╡ 9f9585b3-011c-4ae9-b5ce-069ecef3a23e
@@ -143,16 +143,16 @@ md"""
 """
 
 # ╔═╡ f9c1ce04-81de-4458-8bf1-8225956b1011
-f49(z) = (z/3-1)^3/(z-1)
+f49(z) = (z / 3 - 1)^3 / (z - 1)
 
 # ╔═╡ 1991d152-f45b-4b00-ab29-32f6d80c8997
 # ╠═╡ disabled = true
 #=╠═╡
-Fatou3D(f49, show_critical_points=true)
+Fatou3D(f49, show_critical_points = true)
   ╠═╡ =#
 
 # ╔═╡ f966a1a4-8b1a-4f84-8452-50ac7b0024e9
-f51(z) = 4/27 * (z-1)^3/z
+f51(z) = 4 / 27 * (z - 1)^3 / z
 
 # ╔═╡ 22b75feb-5c5e-42a4-aecc-b2f5ef4a938b
 # ╠═╡ disabled = true
@@ -172,7 +172,7 @@ md"""
 # ╟─6b1c8547-06de-4bb7-9062-0826ad04b92e
 # ╠═70f82c8f-5b1b-46c7-87b3-5fad91ba1094
 # ╠═5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
-# ╠═63627492-a386-4137-ad07-05b687df03c5
+# ╟─63627492-a386-4137-ad07-05b687df03c5
 # ╠═dc859310-0b21-4ede-a740-2b285f52a3df
 # ╠═8848c897-3fb7-4a7d-aa5f-d6b34438decb
 # ╠═130ce106-d086-4c4e-af9d-9369208e2562
@@ -180,7 +180,7 @@ md"""
 # ╠═fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
 # ╠═36714bb2-3622-47eb-a7b5-f4c99145bd59
 # ╠═1c99e13e-e034-4d55-91be-ec22f1125a3d
-# ╠═fa18fc4e-c7a7-4268-ab77-368a277d2ae6
+# ╟─fa18fc4e-c7a7-4268-ab77-368a277d2ae6
 # ╠═363f547e-715c-4b5e-b657-5c41f8e674ca
 # ╠═dd5a428d-c4af-4121-8905-902ca0ec1310
 # ╠═ef15c50e-4158-4716-994b-c8885d9f81af
@@ -188,7 +188,7 @@ md"""
 # ╟─b72a25ca-92a4-4950-88a9-e027335fbe9a
 # ╠═93eb1b62-e7ca-4969-8a1e-5902d509b8a4
 # ╠═b4481ee2-42d9-437f-b452-7632c52afbd0
-# ╠═9f9585b3-011c-4ae9-b5ce-069ecef3a23e
+# ╟─9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
 # ╠═1991d152-f45b-4b00-ab29-32f6d80c8997
 # ╠═f966a1a4-8b1a-4f84-8452-50ac7b0024e9
