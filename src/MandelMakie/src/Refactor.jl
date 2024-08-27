@@ -3,6 +3,7 @@ module Refactor
 export Viewer, Attractor, find_attractors, critical_points
 
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
+using GLMakie.Colors
 using GLMakie.Colors: LCHab
 import Dates
 
@@ -126,10 +127,17 @@ struct Attractor{T}
     period::Int
     multiplier::ComplexF64
     power::Int
+    palette::Vector{RGB{Float64}}
 end
 
-Attractor(c::T, m::Number, p::Integer) where {T} = Attractor{T}(c, 1, m, p)
-Attractor(c::Vector{T}, m::Number, p::Integer) where {T} = Attractor{T}(c, length(c), m, p)
+const twilight_RGB = convert.(RGB{Float64}, cgrad(:twilight))
+Attractor(c::T, m::Number, p::Integer) where {T} = Attractor{T}(c, 1, m, p, twilight_RGB)
+Attractor(c::Vector{T}, m::Number, p::Integer) where {T} = Attractor{T}(c, length(c), m, p, twilight_RGB)
+
+function Attractor(c::Vector{T}, m::Number, p::Integer, index_color::Int, n_colors::Int) where {T}
+    palette = create_gradient(index_color, n_colors)
+    Attractor{T}(c, length(c), m, p, palette)
+end
 
 function Base.show(io::IO, attractor::Attractor{T}) where {T<:PointLike}
     display_string = "... ↦ "
@@ -151,7 +159,7 @@ Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{Point}) =
 
 function Base.convert(::Type{Attractor{ComplexF64}}, attractor::Attractor{Point})
     cycle = convert(Vector{ComplexF64}, attractor.cycle)
-    return Attractor(cycle, attractor.multiplier, attractor.power)
+    return Attractor(cycle, attractor.period, attractor.multiplier, attractor.power, attractor.palette)
 end
 
 const MaybeAttractor = Union{Nothing,Attractor{ComplexF64},Attractor{Point}}
@@ -326,26 +334,30 @@ function find_attractors(f::Function, c::Number; projective::Bool = false)
     # If it is not a family ignores the parameter
     hasmethod(f, Tuple{ComplexF64,ComplexF64}) || return find_attractors(f)
 
+    c = convert(ComplexF64, c)
+
     # Extend the function, in case it was not extended previously
     g = extend_family(f)
 
     # Iterate critical points to find all attracting cycles
     crit_pts = critical_points(g, c)
 
-    attractors = Attractor{Point}[]
+    orbits = Vector{Point}[]
     for z in crit_pts
         pt = convert(Point, z)
         orbit = attracting_cycle(g, pt, c, 1e-4, 1000)
 
         if length(orbit) > 0
-            is_repeat = any([distance(orbit, a) < 2e-4 for a in attractors])
-            !is_repeat && push!(attractors, Attractor(orbit, 0.0im, 0))
+            is_repeat = any([distance(orbit, o) < 2e-4 for o in orbits])
+            !is_repeat && push!(orbits, orbit)
         end
     end
 
-    projective || (attractors = convert(Vector{Attractor{ComplexF64}}, attractors))
+    projective || (orbits = convert.(Vector{ComplexF64}, orbits))
 
-    return attractors
+    n = length(orbits)
+    n == 1 && return [Attractor(orbits[1], 0.0im, 0)]
+    return [Attractor(orbit, 0.0im, 0, i, n) for (i, orbit) in enumerate(orbits)]
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -353,20 +365,23 @@ end
 # --------------------------------------------------------------------------------------- #
 
 const DEFAULT_COLOR_LEVEL = 0.5
+const DEFAULT_COLOR = twilight_RGB[255]
 
 function to_color(approach::OrbitData)
-    return mod(approach.preperiod / approach.period / 64.0, 1.0)
+    depth = mod(approach.preperiod / approach.period / 64.0, 1.0)
+    return twilight_RGB[round(Int, 509 * depth + 1)]
 end
 
 function to_color(iterations::Integer, d::Number, attractor::MaybeAttractor)
-    attractor == empty_attractor && return DEFAULT_COLOR_LEVEL
-    mod(
+    attractor == empty_attractor && return DEFAULT_COLOR
+    depth = mod(
         (iterations / attractor.period + 1.0 - log(attractor.power, -log(abs(d)))) / 64.0,
         1.0,
     )
+    return attractor.palette[round(Int, 509 * depth + 1)]
 end
 
-to_color(::Nothing) = DEFAULT_COLOR_LEVEL
+to_color(::Nothing) = DEFAULT_COLOR
 
 escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)...)
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
@@ -398,32 +413,17 @@ const base_hue_chroma = [
     (43.17999997459473, 302.8931595387337),
 ]
 
-function create_color_gradients(attractors)
-    n_colors = length(attractors)
-    color_gradients = Dict{Attractor,Vector{LCHab{Float64}}}()
-
+function create_gradient(color_index, n_colors)
     if n_colors == 1
-        attractor = attractors[1]
-        color_gradients[attractor] = convert.(LCHab, cgrad(:twilight))
-
+        return twilight_RGB
     elseif n_colors < 9
-        for (color_index, attractor) in enumerate(attractors)
-            chroma, hue = base_hue_chroma[color_index]
-            gradient =
-                [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
-            color_gradients[attractor] = gradient
-        end
-
+        chroma, hue = base_hue_chroma[color_index]
     else
-        for (color_index, attractor) in enumerate(attractors)
-            chroma, hue = 40, mod(360 * (color_index - 1) / n + 30, 360)
-            gradient =
-                [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
-            color_gradients[attractor] = gradient
-        end
+        chroma, hue = 40, mod(360 * (color_index - 1) / n + 30, 360)
     end
 
-    return color_gradients
+    gradient = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
+    return convert.(RGB{Float64}, gradient)
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -449,7 +449,7 @@ mutable struct MandelView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    color_levels::Observable{Matrix{Float64}}
+    color_levels::Observable{Matrix{RGB{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
@@ -486,7 +486,7 @@ mutable struct JuliaView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    color_levels::Observable{Matrix{Float64}}
+    color_levels::Observable{Matrix{RGB{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
@@ -1171,7 +1171,7 @@ struct Viewer
         isnothing(julia_coloring_method) && (julia_coloring_method = coloring_method)
 
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
-        uses_attractors = split(string(julia_coloring_method), "_")[1] == "attractors"
+        uses_attractors = split(string(julia_coloring_method), "_")[end] == "attractors"
 
         d_system = DynamicalSystem(f, crit)
         options = Options(1e-3, 200, 1, 1, compact_view, is_family)

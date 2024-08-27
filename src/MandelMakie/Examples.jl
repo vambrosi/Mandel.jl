@@ -47,7 +47,10 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
+# ╠═╡ disabled = true
+#=╠═╡
 Viewer(f; crit = crit, mandel_diameter = 1.0)
+  ╠═╡ =#
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true
@@ -84,7 +87,15 @@ md"""
 
 # ╔═╡ 922dfc20-4d14-4e8f-8b6d-639157828f1b
 md"""
-The `coloring_method` parameter in `Viewer` picks the algorithm used to plot the Mandelbrot and Julia sets. The possible options are `:escape_time` (default), `:plane_convergence`, and `:projective_convergence`. You can also pick the algorithms separately by using `mandel_coloring_method` and `julia_coloring_method`, which override `coloring_method`.
+The `coloring_method` parameter in `Viewer` picks the algorithm used to plot the Mandelbrot and Julia sets. The possible options are:
+
+- `:escape_time` (default): computes how fast a point approaches ∞; 
+- `:plane_convergence`: finds the attracting cycle of each point separately;
+- `:projective_convergence`: same as before but uses the projective line distance.
+- `:plane_using_attractors` (only for Julia set): finds all attracting cycles first and color code points according to which cycle they approach.
+- `:projective_using_attractors` (only for Julia set): same as before but uses the projective line distance.
+
+You can also pick the algorithms separately by using `mandel_coloring_method` and `julia_coloring_method`, which override `coloring_method`. `mandel_coloring_method` defaults to `projective_convergence` if you set as one of the `using_attractors` options.
 """
 
 # ╔═╡ 9ce5fbe4-2985-4665-8a30-682d93ac52ba
@@ -93,7 +104,7 @@ The `coloring_method` parameter in `Viewer` picks the algorithm used to plot the
 Viewer(
 	g;
 	crit=1/3,
-	coloring_method=:projective_convergence,
+	coloring_method=:projective_using_attractors,
 )
   ╠═╡ =#
 
