@@ -263,20 +263,12 @@ end
 # --------------------------------------------------------------------------------------- #
 
 function coeffs(polynomial, z)
-    higher_terms = polynomial
-    coefficients = ComplexF64[]
+    polynomial = expand(polynomial)
+    d = Symbolics.degree(polynomial)
 
-    cutoff_test = 0
-    while !isequal(higher_terms, 0) || cutoff_test > 20
-        coefficient = substitute(higher_terms, Dict(z => 0))
-        push!(coefficients, Symbolics.value(coefficient))
-
-        higher_terms -= coefficient
-        higher_terms = simplify(higher_terms / z)
-        cutoff_test += 1
-    end
-
-    return coefficients
+    coefficients = [Symbolics.coeff(polynomial, z^d) for d in 1:d]
+    prepend!(coefficients, Symbolics.substitute(polynomial, Dict(z => 0)))
+    return convert.(ComplexF64, coefficients)
 end
 
 function critical_points(func, parameter)
@@ -294,11 +286,12 @@ function critical_points(func, parameter)
     # Get numerator and denominator polynomials
     p, q = f |> Symbolics.value |> Symbolics.arguments
 
+    parameter = convert(ComplexF64, parameter)
     p = Polynomial(coeffs(substitute(p, Dict(c => parameter)), z))
     q = Polynomial(coeffs(substitute(q, Dict(c => parameter)), z))
 
     num = Polynomials.derivative(p) * q - p * Polynomials.derivative(q)
-    points = unique!(roots(num))
+    points = unique!(convert.(ComplexF64, roots(num)))
 
     d = max(Polynomials.degree(p), Polynomials.degree(q))
     length(points) < 2 * d - 2 && pushfirst!(points, ∞)
