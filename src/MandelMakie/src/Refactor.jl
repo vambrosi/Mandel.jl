@@ -1127,12 +1127,26 @@ directly.
 they are shown side-by-side.
 
 - `coloring_method = :escape_time`: Chooses the coloring method for both plots. \
-The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`.
+The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`, \
+`:plane_using_attractors`, and `:projective_using_attractors`. More details below.
 
 - `mandel_coloring_method = nothing`: Chooses the coloring method for the Mandelbrot \
-plot. If it is `nothing` it uses the method specified in `coloring_method`.
+plot. If it is `nothing` it uses the method specified in `coloring_method` or uses \
+`:projective_convergence` if you chose one of the `using_attractors` methods.
 
-- `julia_coloring_method = nothing`: Same as for the `mandel` version.
+- `julia_coloring_method = nothing`: Same as for the `mandel` version without the caveats \
+for `using_attractors` methods.
+
+# Coloring Algorithms
+
+The `coloring_method`s options are:
+
+- `:escape_time` (default): computes how fast a point approaches ∞;
+- `:plane_convergence`: finds the attracting cycle of each point separately;
+- `:projective_convergence`: same as before but uses the projective line distance.
+- `:plane_using_attractors` (only for Julia set): finds all attracting cycles first and color code points according to which cycle they approach.
+- `:projective_using_attractors` (only for Julia set): same as before but uses the projective line distance.
+
 """
 struct Viewer
     d_system::DynamicalSystem
