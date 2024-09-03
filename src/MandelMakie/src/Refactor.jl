@@ -7,6 +7,8 @@ using GLMakie.Colors
 using GLMakie.Colors: LCHab
 import Dates
 
+GLMakie.activate!(title = "MandelMakie")
+
 # --------------------------------------------------------------------------------------- #
 # Complex Plane Definitions
 # --------------------------------------------------------------------------------------- #
@@ -132,9 +134,16 @@ end
 
 const twilight_RGB = convert.(RGB{Float64}, cgrad(:twilight))
 Attractor(c::T, m::Number, p::Integer) where {T} = Attractor{T}(c, 1, m, p, twilight_RGB)
-Attractor(c::Vector{T}, m::Number, p::Integer) where {T} = Attractor{T}(c, length(c), m, p, twilight_RGB)
+Attractor(c::Vector{T}, m::Number, p::Integer) where {T} =
+    Attractor{T}(c, length(c), m, p, twilight_RGB)
 
-function Attractor(c::Vector{T}, m::Number, p::Integer, index_color::Int, n_colors::Int) where {T}
+function Attractor(
+    c::Vector{T},
+    m::Number,
+    p::Integer,
+    index_color::Int,
+    n_colors::Int,
+) where {T}
     palette = create_gradient(index_color, n_colors)
     Attractor{T}(c, length(c), m, p, palette)
 end
@@ -159,7 +168,13 @@ Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{Point}) =
 
 function Base.convert(::Type{Attractor{ComplexF64}}, attractor::Attractor{Point})
     cycle = convert(Vector{ComplexF64}, attractor.cycle)
-    return Attractor(cycle, attractor.period, attractor.multiplier, attractor.power, attractor.palette)
+    return Attractor(
+        cycle,
+        attractor.period,
+        attractor.multiplier,
+        attractor.power,
+        attractor.palette,
+    )
 end
 
 const MaybeAttractor = Union{Nothing,Attractor{ComplexF64},Attractor{Point}}
@@ -266,7 +281,7 @@ function coeffs(polynomial, z)
     polynomial = expand(polynomial)
     d = Symbolics.degree(polynomial)
 
-    coefficients = [Symbolics.coeff(polynomial, z^d) for d in 1:d]
+    coefficients = [Symbolics.coeff(polynomial, z^d) for d = 1:d]
     prepend!(coefficients, Symbolics.substitute(polynomial, Dict(z => 0)))
     return convert.(ComplexF64, coefficients)
 end
