@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.45
+# v0.19.46
 
 using Markdown
 using InteractiveUtils
@@ -85,33 +85,16 @@ md"""
 ## Complex Plane Plots
 """
 
-# ╔═╡ 922dfc20-4d14-4e8f-8b6d-639157828f1b
+# ╔═╡ 879a14f8-207c-4510-b94d-0e7f6f392175
 md"""
-The `coloring_method` parameter in `Viewer` picks the algorithm used to plot the Mandelbrot and Julia sets. The possible options are:
-
-- `:escape_time` (default): computes how fast a point approaches ∞; 
-- `:plane_convergence`: finds the attracting cycle of each point separately;
-- `:projective_convergence`: same as before but uses the projective line distance.
-- `:plane_using_attractors` (only for Julia set): finds all attracting cycles first and color code points according to which cycle they approach.
-- `:projective_using_attractors` (only for Julia set): same as before but uses the projective line distance.
-
-You can also pick the algorithms separately by using `mandel_coloring_method` and `julia_coloring_method`, which override `coloring_method`. `mandel_coloring_method` defaults to `projective_convergence` if you set as one of the `using_attractors` options.
+To get more details about the `Viewer` function just type `?Viewer` in an empty cell.
 """
 
 # ╔═╡ 9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(
-	g;
-	crit=1/3,
-	coloring_method=:projective_using_attractors,
-)
+Viewer(g; crit=1/3,	convergence_criterion=:near_attractor)
   ╠═╡ =#
-
-# ╔═╡ 879a14f8-207c-4510-b94d-0e7f6f392175
-md"""
-To get more details about the `Viewer` function just type `?Viewer` in an empty cell.
-"""
 
 # ╔═╡ 8a161348-be92-47cc-8e3c-62f74b8d96d2
 md"""
@@ -204,9 +187,8 @@ julia = Julia3D(g, im)
 # ╠═259aebbe-a6ac-4b86-8a27-f12e104c3092
 # ╟─654fb826-65c8-4852-83ca-7e7f72351325
 # ╟─fc92cb1c-0310-47ad-a74d-63363c5c6181
-# ╟─922dfc20-4d14-4e8f-8b6d-639157828f1b
-# ╠═9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╟─879a14f8-207c-4510-b94d-0e7f6f392175
+# ╠═9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╟─8a161348-be92-47cc-8e3c-62f74b8d96d2
 # ╟─3ba77924-33c1-4d47-8367-379766a58a95
 # ╠═105f8b1b-de30-4f98-986f-9b667b87949b

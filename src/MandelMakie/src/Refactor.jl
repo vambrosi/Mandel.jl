@@ -380,8 +380,9 @@ function to_color(approach::OrbitData)
     return twilight_RGB[round(Int, 509 * depth + 1)]
 end
 
-function to_color(iterations::Integer, d::Number, attractor::MaybeAttractor)
-    attractor == empty_attractor && return DEFAULT_COLOR
+to_color(::Integer, ::Number, ::Nothing) = DEFAULT_COLOR
+
+function to_color(iterations::Integer, d::Number, attractor::Attractor)
     depth = mod(
         (iterations / attractor.period + 1.0 - log(attractor.power, -log(abs(d)))) / 64.0,
         1.0,
@@ -401,6 +402,7 @@ struct ColoringData{T}
 end
 
 attractor_type(::ColoringData{T}) where {T} = T
+attractor_type(is_projective::Bool) = is_projective ? Point : ComplexF64
 
 const base_hue_chroma = [
     #RGB CA736C 202 115 108 red
@@ -1095,6 +1097,40 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
     return inputs
 end
 
+make_tuple(x) = (x, x)
+make_tuple(x::Tuple) = x
+
+function fix_criteria((mandel, julia))
+    # Test if it is one of the valid options
+    options = [:escape_time, :near_attractor, :almost_periodic]
+    mandel in options || throw("Invalid Mandelbrot set coloring method")
+    julia in options || throw("Invalid Julia set coloring method")
+
+    # Mandelbrot can't use attractors so change to default
+    mandel == :near_attractor && (mandel = :almost_periodic)
+    return mandel, julia
+end
+
+function get_coloring_data(map, c, convergence_criterion, projective_metric)
+    if convergence_criterion == :near_attractor
+        method = escape_time
+        attractors = find_attractors(map, c, projective = projective_metric)
+        update_attractors = true
+    elseif convergence_criterion == :escape_time
+        method = escape_time
+        attractors = [Attractor(∞, 0, 2)]
+        update_attractors = false
+    elseif convergence_criterion == :almost_periodic
+        method = convergence_color
+        attractors = Attractor{attractor_type(projective_metric)}[]
+        update_attractors = false
+    else
+        throw("Invalid `convergence_criterion`")
+    end
+
+    return ColoringData(method, attractors, update_attractors)
+end
+
 """
 	Viewer(f; <keyword arguments>)
 
@@ -1141,26 +1177,26 @@ directly.
 - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if `false` \
 they are shown side-by-side.
 
-- `coloring_method = :escape_time`: Chooses the coloring method for both plots. \
-The options are `:escape_time`, `:plane_convergence`, `:projective_convergence`, \
-`:plane_using_attractors`, and `:projective_using_attractors`. More details below.
+# Coloring Method Options
+For the options below, if you want to set different values for the Mandelbrot and Julia \
+set views, set the option to be a tuple with the respective values.
 
-- `mandel_coloring_method = nothing`: Chooses the coloring method for the Mandelbrot \
-plot. If it is `nothing` it uses the method specified in `coloring_method` or uses \
-`:projective_convergence` if you chose one of the `using_attractors` methods.
+- `convergence_criterion = :escape_time`: Chooses the coloring method for both plots. \
+The options are `:escape_time`, `:near_attractor`, `:almost_periodic`. More details below.
 
-- `julia_coloring_method = nothing`: Same as for the `mandel` version without the caveats \
-for `using_attractors` methods.
+- `projective_metric = false`: Determines which metric will be used to determine \
+distances, the complex plane metric, or the metric on the projective line. The distance \
+between ∞ and a finite point in the plane metric is the inverse of its absolute value.
 
-# Coloring Algorithms
+# Covergence Criteria
 
-The `coloring_method`s options are:
-
-- `:escape_time` (default): computes how fast a point approaches ∞;
-- `:plane_convergence`: finds the attracting cycle of each point separately;
-- `:projective_convergence`: same as before but uses the projective line distance.
-- `:plane_using_attractors` (only for Julia set): finds all attracting cycles first and color code points according to which cycle they approach.
-- `:projective_using_attractors` (only for Julia set): same as before but uses the projective line distance.
+- `:escape_time` (default): computes how fast a point approaches ∞ (in the plane metric);
+- `:almost_periodic`: finds the attracting cycle for each point separately \
+using Floyd's cycle-finding algorithm;
+- `:near_attractor`: computes all attracting cycles in advance, and then computes how \
+fast each point converges to one of those attractors (uses different color gradients \
+for each attractor). This option is only available for the Julia set, and it will \
+default to `:almost_periodic` in the Mandelbrot set case.
 
 """
 struct Viewer
@@ -1185,48 +1221,33 @@ struct Viewer
         julia_diameter = 4.0,
         compact_view = true,
         grid_width = 800,
-        coloring_method = :escape_time,
-        mandel_coloring_method = nothing,
-        julia_coloring_method = nothing,
+        convergence_criterion = :escape_time,
+        projective_metric = false,
     )
-        isnothing(mandel_coloring_method) && (mandel_coloring_method = coloring_method)
-        isnothing(julia_coloring_method) && (julia_coloring_method = coloring_method)
+        # Put options in standard form
+        projective_metrics = make_tuple(projective_metric)
+        convergence_criteria = fix_criteria(make_tuple(convergence_criterion))
 
+        # Check if it is a family of maps
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
-        uses_attractors = split(string(julia_coloring_method), "_")[end] == "attractors"
 
+        # Create Viewer Data
         d_system = DynamicalSystem(f, crit)
         options = Options(1e-3, 200, 1, 1, compact_view, is_family)
         figure = Figure(size = (750, 650))
 
-        if uses_attractors
-            proj_attractors = find_attractors(d_system.map, c, projective = true)
-            plane_attractors = convert(Vector{Attractor{ComplexF64}}, proj_attractors)
-        else
-            proj_attractors = Attractor{Point}[]
-            plane_attractors = Attractor{ComplexF64}[]
-        end
-
-        coloring_data = Dict(
-            :escape_time =>
-                ColoringData{ComplexF64}(escape_time, [Attractor(∞, 0, 2)], false),
-            :plane_convergence => ColoringData{ComplexF64}(
-                convergence_color,
-                Attractor{ComplexF64}[],
-                false,
-            ),
-            :projective_convergence =>
-                ColoringData{Point}(convergence_color, Attractor{ComplexF64}[], false),
-            :plane_using_attractors =>
-                ColoringData{ComplexF64}(escape_time, plane_attractors, true),
-            :projective_using_attractors =>
-                ColoringData{Point}(escape_time, proj_attractors, true),
+        mandel_coloring = get_coloring_data(
+            d_system.map,
+            c,
+            convergence_criteria[1],
+            projective_metrics[1],
         )
-
-        # Changes Mandelbrot set coloring method to a valid option
-        words = split(string(mandel_coloring_method), "_")
-        words[end] == "attractors" &&
-            (mandel_coloring_method = Symbol(words[1] * "_convergence"))
+        julia_coloring = get_coloring_data(
+            d_system.map,
+            c,
+            convergence_criteria[2],
+            projective_metrics[2],
+        )
 
         mandel =
             !is_family ? nothing :
@@ -1234,7 +1255,7 @@ struct Viewer
                 center = mandel_center,
                 diameter = mandel_diameter,
                 pixels = grid_width,
-                coloring_data = coloring_data[mandel_coloring_method],
+                coloring_data = mandel_coloring,
             )
 
         julia = JuliaView(
@@ -1242,7 +1263,7 @@ struct Viewer
             diameter = julia_diameter,
             parameter = c,
             pixels = grid_width,
-            coloring_data = coloring_data[julia_coloring_method],
+            coloring_data = julia_coloring,
         )
 
         julia.marks[] = [d_system.critical_point(julia.parameter)]

@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.45
+# v0.19.46
 
 using Markdown
 using InteractiveUtils
@@ -87,7 +87,7 @@ devaneycrit(λ) = λ^(1 / 4)
 # ╔═╡ 1c99e13e-e034-4d55-91be-ec22f1125a3d
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(devaney22, crit = (λ -> λ^(1 / 4)), mandel_diameter = 1.0)
+Viewer(devaney22, crit = devaneycrit, mandel_diameter = 1.0)
   ╠═╡ =#
 
 # ╔═╡ fa18fc4e-c7a7-4268-ab77-368a277d2ae6
@@ -131,10 +131,19 @@ Note that $c$ is a quadratic function of $\rho$.
 # ╔═╡ 93eb1b62-e7ca-4969-8a1e-5902d509b8a4
 per4(z, ρ) = (z - ρ) * (z - (2ρ - 1) / (ρ - 1)) / z^2
 
+# ╔═╡ bea223da-13a5-4662-9e1f-ed6b27cf6d54
+per4crit(ρ) = (4ρ^2 - 2ρ) / (-1 + ρ + ρ^2)
+
 # ╔═╡ b4481ee2-42d9-437f-b452-7632c52afbd0
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(per4, crit = (ρ -> (4ρ^2 - 2ρ) / (-1 + ρ + ρ^2)))
+Viewer(per4, crit = per4crit)
+  ╠═╡ =#
+
+# ╔═╡ 2962904d-2c4d-4fe7-9c59-f735ab953bfa
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer(per4, crit = per4crit, convergence_criterion=:near_attractor)
   ╠═╡ =#
 
 # ╔═╡ 9f9585b3-011c-4ae9-b5ce-069ecef3a23e
@@ -187,7 +196,9 @@ md"""
 # ╟─a9c743b4-7214-4b4d-b229-39aea38215bb
 # ╟─b72a25ca-92a4-4950-88a9-e027335fbe9a
 # ╠═93eb1b62-e7ca-4969-8a1e-5902d509b8a4
+# ╠═bea223da-13a5-4662-9e1f-ed6b27cf6d54
 # ╠═b4481ee2-42d9-437f-b452-7632c52afbd0
+# ╠═2962904d-2c4d-4fe7-9c59-f735ab953bfa
 # ╟─9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
 # ╠═1991d152-f45b-4b00-ab29-32f6d80c8997
