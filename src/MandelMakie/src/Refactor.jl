@@ -129,10 +129,10 @@ struct Attractor{T}
     period::Int
     multiplier::ComplexF64
     power::Int
-    palette::Vector{RGB{Float64}}
+    palette::Vector{RGBA{Float64}}
 end
 
-const twilight_RGB = convert.(RGB{Float64}, cgrad(:twilight))
+const twilight_RGB = convert.(RGBA{Float64}, cgrad(:twilight))
 Attractor(c::T, m::Number, p::Integer) where {T} = Attractor{T}(c, 1, m, p, twilight_RGB)
 Attractor(c::Vector{T}, m::Number, p::Integer) where {T} =
     Attractor{T}(c, length(c), m, p, twilight_RGB)
@@ -181,11 +181,23 @@ const MaybeAttractor = Union{Nothing,Attractor{ComplexF64},Attractor{Point}}
 
 const empty_attractor = nothing
 
-distance(z, attractor::Attractor{T}) where {T<:PointLike} = distance(z, attractor.cycle)
 distance(cycle1::Vector{T}, cycle2::Vector{T}) where {T<:PointLike} =
     minimum([distance(z, w) for z in cycle1, w in cycle2])
-distance(z::T, cycle::Vector{T}) where {T<:PointLike} =
-    minimum([distance(z, w) for w in cycle])
+
+function is_nearby(z::T, w::T, ε::Real) where {T<:PointLike}
+    d = distance(z, w)
+    d < ε ? (return true, d) : (return false, ε)
+end
+
+function is_nearby(z::T, cycle::Vector{T}, ε::Real) where {T<:PointLike}
+    for w in cycle
+        d = distance(z, w)
+        if d < ε
+            return true, d
+        end
+    end
+    return false, ε
+end
 
 function convergence_time(
     f::Function,
@@ -194,13 +206,11 @@ function convergence_time(
     attractors::Vector{Attractor{T}},
     ε::Float64,
     max_iterations::Int,
-)::Tuple{Int,Float64,MaybeAttractor} where {T<:PointLike}
+) where {T<:PointLike}
     for iteration = 0:max_iterations
         for attractor in attractors
-            d = distance(z, attractor)
-            if d < ε
-                return iteration, d, attractor
-            end
+            near, d = is_nearby(z, attractor.cycle, ε)
+            near && (return iteration, d, attractor)
         end
 
         z = f(z, c)
@@ -217,7 +227,7 @@ end
 
 const MaybeCloseBy = Union{Nothing,CloseBy}
 
-function period_multiple_apart(f, z, c, ε, max_iterations)::MaybeCloseBy
+function period_multiple_apart(f, z, c, ε, max_iterations)
     slow = fast = z
 
     for n = 1:max_iterations
@@ -230,7 +240,7 @@ function period_multiple_apart(f, z, c, ε, max_iterations)::MaybeCloseBy
     return nothing
 end
 
-function iterate_until_close(f, z, w, c, ε, max_iterations)::MaybeCloseBy
+function iterate_until_close(f, z, w, c, ε, max_iterations)
     for n = 1:max_iterations
         z = f(z, c)
 
@@ -240,7 +250,7 @@ function iterate_until_close(f, z, w, c, ε, max_iterations)::MaybeCloseBy
     return nothing
 end
 
-function iterate_both_until_close(f, z, w, c, ε, max_iterations)::MaybeCloseBy
+function iterate_both_until_close(f, z, w, c, ε, max_iterations)
     for n = 1:max_iterations
         z = f(z, c)
         w = f(w, c)
@@ -258,7 +268,7 @@ end
 
 const MaybeOrbitData = Union{Nothing,OrbitData}
 
-function multiplier(f, z0, c, _, ε, max_iterations)::MaybeOrbitData
+function multiplier(f, z0, c, _, ε, max_iterations)
     points = period_multiple_apart(f, z0, c, ε, max_iterations)
     isnothing(points) && return nothing
 
@@ -281,7 +291,7 @@ function coeffs(polynomial, z)
     polynomial = expand(polynomial)
     d = Symbolics.degree(polynomial)
 
-    coefficients = [Symbolics.coeff(polynomial, z^d) for d = 1:d]
+    coefficients = ComplexF64[Symbolics.coeff(polynomial, z^d) for d = 1:d]
     prepend!(coefficients, Symbolics.substitute(polynomial, Dict(z => 0)))
     return convert.(ComplexF64, coefficients)
 end
@@ -433,7 +443,7 @@ function create_gradient(color_index, n_colors)
     end
 
     gradient = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
-    return convert.(RGB{Float64}, gradient)
+    return convert.(RGBA{Float64}, gradient)
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -459,7 +469,7 @@ mutable struct MandelView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    color_levels::Observable{Matrix{RGB{Float64}}}
+    color_levels::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
@@ -469,7 +479,7 @@ mutable struct MandelView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
-        color_levels = zeros(Float64, pixels, pixels)
+        color_levels = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = ComplexF64[]
 
@@ -496,7 +506,7 @@ mutable struct JuliaView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    color_levels::Observable{Matrix{RGB{Float64}}}
+    color_levels::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
@@ -506,7 +516,7 @@ mutable struct JuliaView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
-        color_levels = zeros(Float64, pixels, pixels)
+        color_levels = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = ComplexF64[]
 
@@ -1118,7 +1128,8 @@ function get_coloring_data(map, c, convergence_criterion, projective_metric)
         update_attractors = true
     elseif convergence_criterion == :escape_time
         method = escape_time
-        attractors = [Attractor(∞, 0, 2)]
+        attractors =
+            projective_metric ? [Attractor(Point(1, 0), 0, 2)] : [Attractor(∞, 0, 2)]
         update_attractors = false
     elseif convergence_criterion == :almost_periodic
         method = convergence_color
@@ -1188,9 +1199,9 @@ The options are `:escape_time`, `:near_attractor`, `:almost_periodic`. More deta
 distances, the complex plane metric, or the metric on the projective line. The distance \
 between ∞ and a finite point in the plane metric is the inverse of its absolute value.
 
-# Covergence Criteria
+# Convergence Criteria
 
-- `:escape_time` (default): computes how fast a point approaches ∞ (in the plane metric);
+- `:escape_time` (default): computes how fast a point approaches ∞;
 - `:almost_periodic`: finds the attracting cycle for each point separately \
 using Floyd's cycle-finding algorithm;
 - `:near_attractor`: computes all attracting cycles in advance, and then computes how \
