@@ -320,8 +320,11 @@ function critical_points(func, parameter)
     derivative_num = Polynomials.derivative(num) * den - num * Polynomials.derivative(den)
     points = convert.(ComplexF64, roots(derivative_num))
 
-    length(points) < 2 * d - 2 && pushfirst!(points, ∞)
-    return unique!(points)
+    while length(points) < 2 * d - 2
+        pushfirst!(points, ∞)
+    end
+
+    return points
 end
 
 function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
@@ -341,17 +344,18 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
     return orbit
 end
 
-function find_attractors(f::Function; projective::Bool = false)
+function find_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
     hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
-    return find_attractors(h, 0.0im; projective = projective)
+    return find_attractors(h, 0.0im; projective = projective, ε = ε)
 end
 
-function find_attractors(f::Function, c::Number; projective::Bool = false)
+function find_attractors(f::Function, c::Number; projective::Bool = false, ε::Real = 1e-4)
     # If it is not a family ignores the parameter
-    hasmethod(f, Tuple{ComplexF64,ComplexF64}) || return find_attractors(f)
+    hasmethod(f, Tuple{ComplexF64,ComplexF64}) ||
+        return find_attractors(f, projective = projective, ε = ε)
 
     c = convert(ComplexF64, c)
 
@@ -360,23 +364,33 @@ function find_attractors(f::Function, c::Number; projective::Bool = false)
 
     # Iterate critical points to find all attracting cycles
     crit_pts = critical_points(g, c)
+    unique_crit_pts = [(z, count(w -> isapprox(z, w), crit_pts)) for z in unique(crit_pts)]
 
     orbits = Vector{Point}[]
-    for z in crit_pts
+    for (z, multiplicity) in unique_crit_pts
         pt = convert(Point, z)
-        orbit = attracting_cycle(g, pt, c, 1e-4, 1000)
+        orbit = attracting_cycle(g, pt, c, ε / 2, 1000)
 
         if length(orbit) > 0
-            is_repeat = any([distance(orbit, o) < 2e-4 for o in orbits])
+            is_repeat = any([distance(orbit, o) < ε for o in orbits])
             !is_repeat && push!(orbits, orbit)
+        end
+    end
+
+    powers = ones(Int, length(orbits))
+    for (i, orbit) in enumerate(orbits)
+        for (z, multiplicity) in unique_crit_pts
+            pt = convert(Point, z)
+            powers[i] += is_nearby(pt, orbit, ε / 2)[1] ? multiplicity : 0
         end
     end
 
     projective || (orbits = convert.(Vector{ComplexF64}, orbits))
 
     n = length(orbits)
-    n == 1 && return [Attractor(orbits[1], 0.0im, 0)]
-    return [Attractor(orbit, 0.0im, 0, i, n) for (i, orbit) in enumerate(orbits)]
+    a = [Attractor(o, 0.0im, p, i, n) for (i, (o, p)) in enumerate(zip(orbits, powers))]
+
+    return a
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -394,10 +408,13 @@ end
 to_color(::Integer, ::Number, ::Nothing) = DEFAULT_COLOR
 
 function to_color(iterations::Integer, d::Number, attractor::Attractor)
-    depth = mod(
-        (iterations / attractor.period + 1.0 - log(attractor.power, -log(abs(d)))) / 64.0,
-        1.0,
-    )
+    power = attractor.power
+    correction = log(power, -log(abs(d)))
+
+    depth =
+        power <= 1 ? mod((iterations / attractor.period + 1.0) / 64.0, 1.0) :
+        mod((iterations / attractor.period + 1.0 - correction) / 64.0, 1.0)
+
     return attractor.palette[round(Int, 509 * depth + 1)]
 end
 
@@ -416,10 +433,10 @@ attractor_type(::ColoringData{T}) where {T} = T
 attractor_type(is_projective::Bool) = is_projective ? Point : ComplexF64
 
 const base_hue_chroma = [
-    #RGB CA736C 202 115 108 red
-    (38.35791098655309, 29.49442824523494),
     #RGB 5794D0 87 148 208 blue
     (36.822489073365745, 266.89189631383687),
+    #RGB CA736C 202 115 108 red
+    (38.35791098655309, 29.49442824523494),
     #RGB 47A477 71 164 119 green
     (41.31205868565174, 158.3817555910295),
     #RGB 8D9741 141 151 65 yellow
