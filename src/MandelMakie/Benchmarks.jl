@@ -5,12 +5,8 @@ pick_parameter! = MandelMakie.Refactor.pick_parameter!
 
 function test(c, p)
     f(z, c) = z^2 + c
-    viewer = Viewer(
-        f,
-        mandel_center = -0.5,
-        convergence_criterion = c,
-        projective_metric = p,
-    )
+    viewer =
+        Viewer(f, mandel_center = -0.5, convergence_criterion = c, projective_metric = p)
 
     julia = viewer.julia
     mandel = viewer.mandel
@@ -40,12 +36,8 @@ tests()
 
 function profile(c, p)
     f(z, c) = z^2 + c
-    viewer = Viewer(
-        f,
-        mandel_center = -0.5,
-        convergence_criterion = c,
-        projective_metric = p,
-    )
+    viewer =
+        Viewer(f, mandel_center = -0.5, convergence_criterion = c, projective_metric = p)
 
     julia = viewer.julia
     mandel = viewer.mandel

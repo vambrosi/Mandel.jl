@@ -5,7 +5,8 @@ export Viewer, Attractor, find_attractors, critical_points
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
 using GLMakie.Colors
 using GLMakie.Colors: LCHab
-import Dates
+
+import Dates, Nemo
 
 GLMakie.activate!(title = "MandelMakie")
 
@@ -71,7 +72,7 @@ function extend_function(f::Function)
         h = z -> normalize(Point(fu(z...), fv(z...)))
     end
 
-    g(z::ComplexF64) = f(z)
+    g(z) = f(z)
     g(z::Point) = h(z)
     return g
 end
@@ -85,7 +86,7 @@ function extend_family(f::Function)
     fu = build_function(num, u, v, a, b, expression = Val{false})
     fv = build_function(den, u, v, a, b, expression = Val{false})
 
-    g(z::Number, c::Number) = f(z, c)
+    g(z, c) = f(z, c)
     g(z::Point, c::Number) = normalize(Point(fu(z..., c, 1), fv(z..., c, 1)))
     g(z::Point, c::Point) = normalize(Point(fu(z..., c...), fv(z..., c...)))
 
@@ -297,30 +298,30 @@ function coeffs(polynomial, z)
 end
 
 function critical_points(func, parameter)
-    @variables z, u, v, c
-    f = func(z, c)
+    # We use Nemo.jl only to extract numerators and denominators of rational functions.
+    # Using Symbolics.jl seemed to require checking for some edge cases.
 
-    # Hack to write rational function as a ratio of polynomials
-    # (Not sure it works on all cases.)
-    f =
-        f |>
-        (x -> substitute(x, Dict(z => u / v))) |>
-        simplify |>
-        (x -> substitute(x, Dict(u => z, v => 1)))
+    # Create the Complex Rational Funtions Field
+    CC = Nemo.ComplexField()
+    T, z = Nemo.polynomial_ring(CC, "z")
+    F = Nemo.fraction_field(T)
 
-    # Get numerator and denominator polynomials
-    p, q = f |> Symbolics.value |> Symbolics.arguments
+    # Transform function into a symbolic expression
+    f = func(F(z), CC(parameter))
 
-    parameter = convert(ComplexF64, parameter)
-    p = Polynomial(coeffs(substitute(p, Dict(c => parameter)), z))
-    q = Polynomial(coeffs(substitute(q, Dict(c => parameter)), z))
+    # Get coefficients of numerator and denominator
+    num_coeffs = convert.(ComplexF64, collect(Nemo.coefficients(Nemo.numerator(f))))
+    den_coeffs = convert.(ComplexF64, collect(Nemo.coefficients(Nemo.denominator(f))))
 
-    num = Polynomials.derivative(p) * q - p * Polynomials.derivative(q)
-    points = unique!(convert.(ComplexF64, roots(num)))
+    num = Polynomial(num_coeffs)
+    den = Polynomial(den_coeffs)
+    d = max(Polynomials.degree(num), Polynomials.degree(den))
 
-    d = max(Polynomials.degree(p), Polynomials.degree(q))
+    derivative_num = Polynomials.derivative(num) * den - num * Polynomials.derivative(den)
+    points = convert.(ComplexF64, roots(derivative_num))
+
     length(points) < 2 * d - 2 && pushfirst!(points, ∞)
-    return points
+    return unique!(points)
 end
 
 function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
