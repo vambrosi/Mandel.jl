@@ -381,7 +381,7 @@ function find_attractors(f::Function, c::Number; projective::Bool = false, ε::R
     for (i, orbit) in enumerate(orbits)
         for (z, multiplicity) in unique_crit_pts
             pt = convert(Point, z)
-            powers[i] += is_nearby(pt, orbit, ε / 2)[1] ? multiplicity : 0
+            powers[i] *= is_nearby(pt, orbit, ε / 2)[1] ? (multiplicity + 1) : 1
         end
     end
 
