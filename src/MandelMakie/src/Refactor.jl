@@ -1,6 +1,6 @@
 module Refactor
 
-export Viewer, Attractor, find_attractors, critical_points
+export Viewer, Attractor, get_attractors, get_parameter, critical_points
 
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
 using GLMakie.Colors
@@ -128,7 +128,7 @@ Base.convert(::Type{ComplexF64}, z::Point) = to_complex_plane(z)
 struct Attractor{T}
     cycle::Union{T,Vector{T}}
     period::Int
-    multiplier::ComplexF64
+    multiplier::Float64
     power::Int
     palette::Vector{RGBA{Float64}}
 end
@@ -150,10 +150,10 @@ function Attractor(
 end
 
 function Base.show(io::IO, attractor::Attractor{T}) where {T<:PointLike}
-    display_string = "... ↦ "
+    display_string = "... ↦ " * string(attractor.cycle[1]) * " ↦ "
 
-    for z in attractor.cycle
-        display_string *= string(z) * " ↦ "
+    for z in attractor.cycle[2:end]
+        display_string *= "\n" * "     ↦ " * string(z) * " ↦ "
     end
 
     display_string *= "..."
@@ -161,11 +161,25 @@ function Base.show(io::IO, attractor::Attractor{T}) where {T<:PointLike}
     print(io, display_string)
 end
 
-Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{ComplexF64}) =
-    print(io, "Attracting cycle in the complex plane:\n   ", attractor)
+Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{ComplexF64}) = print(
+    io,
+    "Attracting cycle in the complex plane: \n \
+    Period     = $(attractor.period) \n \
+    Multiplier = $(attractor.multiplier) \n \
+    Degree     = $(attractor.power) \n \
+    Cycle      = " * (attractor.period > 1 ? "\n " : ""),
+    attractor,
+)
 
-Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{Point}) =
-    print(io, "Attracting cycle in the complex projective line:\n   ", attractor)
+Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{Point}) = print(
+    io,
+    "Attracting cycle in the complex projective line: \n \
+    Period     = $(attractor.period) \n \
+    Multiplier = $(attractor.multiplier) \n \
+    Degree     = $(attractor.power) \n \
+    Cycle      = " * (attractor.period == 1 ? "\n" : ""),
+    attractor,
+)
 
 function Base.convert(::Type{Attractor{ComplexF64}}, attractor::Attractor{Point})
     cycle = convert(Vector{ComplexF64}, attractor.cycle)
@@ -344,18 +358,26 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
     return orbit
 end
 
-function find_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
+"""
+    get_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
+    get_attractors(f::Function, c::Number; projective::Bool = false, ε::Real = 1e-4)
+    get_attractors(viewer::Viewer)
+
+Find the attracting cycles of a complex map or family. If the input is a `Viewer`, it will \
+use the map/family and parameter currently shown in the `viewer`.
+"""
+function get_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
     hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
-    return find_attractors(h, 0.0im; projective = projective, ε = ε)
+    return get_attractors(h, 0.0im; projective = projective, ε = ε)
 end
 
-function find_attractors(f::Function, c::Number; projective::Bool = false, ε::Real = 1e-4)
+function get_attractors(f::Function, c::Number; projective::Bool = false, ε::Real = 1e-4)
     # If it is not a family ignores the parameter
     hasmethod(f, Tuple{ComplexF64,ComplexF64}) ||
-        return find_attractors(f, projective = projective, ε = ε)
+        return get_attractors(f, projective = projective, ε = ε)
 
     c = convert(ComplexF64, c)
 
@@ -388,7 +410,7 @@ function find_attractors(f::Function, c::Number; projective::Bool = false, ε::R
     projective || (orbits = convert.(Vector{ComplexF64}, orbits))
 
     n = length(orbits)
-    a = [Attractor(o, 0.0im, p, i, n) for (i, (o, p)) in enumerate(zip(orbits, powers))]
+    a = [Attractor(o, 0.0, p, i, n) for (i, (o, p)) in enumerate(zip(orbits, powers))]
 
     return a
 end
@@ -408,14 +430,17 @@ end
 to_color(::Integer, ::Number, ::Nothing) = DEFAULT_COLOR
 
 function to_color(iterations::Integer, d::Number, attractor::Attractor)
-    power = attractor.power
-    correction = log(power, -log(abs(d)))
+    d = max(d, 0)
+    depth = iterations / attractor.period
 
-    depth =
-        power <= 1 ? mod((iterations / attractor.period + 1.0) / 64.0, 1.0) :
-        mod((iterations / attractor.period + 1.0 - correction) / 64.0, 1.0)
+    if d > 0
+        depth -= log(attractor.multiplier, d)
+        if attractor.power > 1
+            depth -= log(attractor.power, -log(d))
+        end
+    end
 
-    return attractor.palette[round(Int, 509 * depth + 1)]
+    return attractor.palette[round(Int, 509 * mod(depth / 64.0, 1.0) + 1)]
 end
 
 to_color(::Nothing) = DEFAULT_COLOR
@@ -741,7 +766,7 @@ function pick_parameter!(
     if coloring_data.update_attractors
         T = attractor_type(coloring_data)
         attractor_list =
-            find_attractors(d_system.map, julia.parameter, projective = (T == Point))
+            get_attractors(d_system.map, julia.parameter, projective = (T == Point))
         julia.coloring_data = ColoringData{T}(
             coloring_data.method,
             attractor_list,
@@ -1142,7 +1167,7 @@ end
 function get_coloring_data(map, c, convergence_criterion, projective_metric)
     if convergence_criterion == :near_attractor
         method = escape_time
-        attractors = find_attractors(map, c, projective = projective_metric)
+        attractors = get_attractors(map, c, projective = projective_metric)
         update_attractors = true
     elseif convergence_criterion == :escape_time
         method = escape_time
@@ -1332,5 +1357,21 @@ struct Viewer
 end
 
 Base.show(io::IO, viewer::Viewer) = display(GLMakie.Screen(), viewer.figure)
+
+function get_attractors(viewer::Viewer)
+    attractors =
+        viewer.julia.coloring_data.update_attractors ?
+        viewer.julia.coloring_data.attractors :
+        get_attractors(viewer.d_system.map, viewer.julia.parameter)
+
+    return attractors
+end
+
+"""
+    get_parameter(viewer::Viewer)
+
+Get the parameter used to plot the Julia set in `viewer`.
+"""
+get_parameter(viewer::Viewer) = viewer.julia.parameter
 
 end

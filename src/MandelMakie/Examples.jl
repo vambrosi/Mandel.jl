@@ -21,6 +21,8 @@ begin
     Julia3D = MandelMakie.Julia3D
     Fatou3D = MandelMakie.Fatou3D
     set_parameter! = MandelMakie.set_parameter!
+    get_parameter = MandelMakie.get_parameter
+    get_attractors = MandelMakie.get_attractors
 end
 
 # ╔═╡ 1ba72fef-d5c4-4da4-9c17-4ba0096bf968
@@ -93,7 +95,26 @@ To get more details about the `Viewer` function just type `?Viewer` in an empty 
 # ╔═╡ 9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(g; crit=1/3,	convergence_criterion=:near_attractor)
+viewer = Viewer(g; crit=1/3, convergence_criterion=:near_attractor)
+  ╠═╡ =#
+
+# ╔═╡ 64508179-e449-4d9a-b669-a08cfd5b6df1
+md"""
+You can also see the attracting cycles for the map shown in a `Viewer`.
+
+The cells below need to be manually updated to reflect the last changes in the viewer.
+"""
+
+# ╔═╡ b42b3753-33ba-4e25-a01b-b316dbd86787
+# ╠═╡ disabled = true
+#=╠═╡
+get_parameter(viewer)
+  ╠═╡ =#
+
+# ╔═╡ f1a18d08-d81f-4667-b87a-8d19989b201b
+# ╠═╡ disabled = true
+#=╠═╡
+get_attractors(viewer)
   ╠═╡ =#
 
 # ╔═╡ 8a161348-be92-47cc-8e3c-62f74b8d96d2
@@ -189,6 +210,9 @@ julia = Julia3D(g, im)
 # ╟─fc92cb1c-0310-47ad-a74d-63363c5c6181
 # ╟─879a14f8-207c-4510-b94d-0e7f6f392175
 # ╠═9ce5fbe4-2985-4665-8a30-682d93ac52ba
+# ╟─64508179-e449-4d9a-b669-a08cfd5b6df1
+# ╠═b42b3753-33ba-4e25-a01b-b316dbd86787
+# ╠═f1a18d08-d81f-4667-b87a-8d19989b201b
 # ╟─8a161348-be92-47cc-8e3c-62f74b8d96d2
 # ╟─3ba77924-33c1-4d47-8367-379766a58a95
 # ╠═105f8b1b-de30-4f98-986f-9b667b87949b

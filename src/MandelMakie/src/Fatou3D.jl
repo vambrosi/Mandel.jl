@@ -82,7 +82,7 @@ function nearby_up_to_shift(orbit1, orbit2, ε)
     return false
 end
 
-function get_attractors(f_proj, crit_pts, c)
+function find_attractors(f_proj, crit_pts, c)
     attractors = []
     for crit_pt in crit_pts
         orbit = attracting_orbit(f_proj, crit_pt, Point(c, 1), 1e-4, 500)
@@ -165,7 +165,7 @@ function Fatou3D(f::Function, c::Number = 0.0im; show_critical_points = false)
         )
     end
 
-    attractor_points = get_attractors(f_proj, crit_pts, c)
+    attractor_points = find_attractors(f_proj, crit_pts, c)
     attractor_vectors = []
     attractor_traces = []
 
