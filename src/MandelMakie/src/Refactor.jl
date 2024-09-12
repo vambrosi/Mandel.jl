@@ -5,6 +5,7 @@ export Viewer, Attractor, get_attractors, get_parameter, critical_points
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
 using GLMakie.Colors
 using GLMakie.Colors: LCHab
+using Crayons
 
 import Dates, Nemo
 
@@ -149,11 +150,12 @@ function Attractor(
     Attractor{T}(c, length(c), m, p, palette)
 end
 
-function Base.show(io::IO, attractor::Attractor{T}) where {T<:PointLike}
-    display_string = "... ↦ " * string(attractor.cycle[1]) * " ↦ "
+function Base.show(io::IO, attractor::Attractor{T}; indent::Int=0) where {T<:PointLike}
+    indentation = " " ^ indent
+    display_string = indentation * "... ↦ " * string(attractor.cycle[1]) * " ↦ "
 
     for z in attractor.cycle[2:end]
-        display_string *= "\n" * "     ↦ " * string(z) * " ↦ "
+        display_string *= "\n" * indentation * "     ↦ " * string(z) * " ↦ "
     end
 
     display_string *= "..."
@@ -161,25 +163,52 @@ function Base.show(io::IO, attractor::Attractor{T}) where {T<:PointLike}
     print(io, display_string)
 end
 
-Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{ComplexF64}) = print(
-    io,
-    "Attracting cycle in the complex plane: \n \
-    Period     = $(attractor.period) \n \
-    Multiplier = $(attractor.multiplier) \n \
-    Degree     = $(attractor.power) \n \
-    Cycle      = " * (attractor.period > 1 ? "\n " : ""),
-    attractor,
-)
+function print_palette(io::IO, palette; size = 25)
+    Δ, r = divrem(length(palette), size)
 
-Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{Point}) = print(
-    io,
-    "Attracting cycle in the complex projective line: \n \
-    Period     = $(attractor.period) \n \
-    Multiplier = $(attractor.multiplier) \n \
-    Degree     = $(attractor.power) \n \
-    Cycle      = " * (attractor.period == 1 ? "\n" : ""),
-    attractor,
-)
+    position = div(r, 2)
+    for i in 0:size
+        color = convert(RGB24, palette[position]).color
+        print(io, Crayon(foreground = color), "█")
+        position += Δ
+    end
+
+    print(io, Crayon(reset = true))
+end
+
+function Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{T}) where {T<:PointLike}
+    space_name = T == ComplexF64 ? "plane" : "projective line"
+    print(
+        io,
+        "Attracting cycle in the complex $space_name: \n  \
+        Period     = $(attractor.period) \n  \
+        Multiplier = $(attractor.multiplier) \n  \
+        Degree     = $(attractor.power) \n  \
+        Palette    = $(sprint(print_palette, attractor.palette)) \n  \
+        Cycle      = " * (attractor.period > 1 ? "\n " : ""),
+    )
+    show(io, attractor, indent=(attractor.period > 1 ? 3 : 0))
+end
+
+function Base.show(io::IO, m::MIME"text/html", attractor::Attractor{T}) where {T<:PointLike}
+    compact = get(io, :compact, false)
+    space_name = T == ComplexF64 ? "plane" : "projective line"
+
+    show(
+        io,
+        m,
+        HTML("<table style='width:550px'> \
+                <tr> \
+                    <td colspan=2> Attracting cycle in the complex $space_name: </td> \
+                </tr> \
+                <tr><td> Period </td> <td> $(attractor.period) </td></tr>\
+                <tr><td> Multiplier </td> <td> $(attractor.multiplier) </td></tr> \
+                <tr><td> Degree </td> <td> $(attractor.power) </td></tr> \
+                <tr><td> Cycle  </td> <td>"),
+    )
+    print(io, attractor)
+    show(io, m, html"</td> </tr> </table>")
+end
 
 function Base.convert(::Type{Attractor{ComplexF64}}, attractor::Attractor{Point})
     cycle = convert(Vector{ComplexF64}, attractor.cycle)
