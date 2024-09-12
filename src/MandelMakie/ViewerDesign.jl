@@ -11,7 +11,7 @@ using GLMakie
 function escape_time(z0::Number, c::Number)
     z = z0
 
-    for iter = 1:200
+    for iter in 1:200
         z = z^2 + c
 
         if abs(z) > 100.0
@@ -71,8 +71,8 @@ function update!(view::MandelView)
     δ = 0.5 * view.diameter + 0.5 * step
     corner = view.center - complex(δ, δ)
 
-    Threads.@threads for j = 1:width
-        for i = 1:height
+    Threads.@threads for j in 1:width
+        for i in 1:height
             c = corner + step * complex(i, j)
             @inbounds array[i, j] = escape_time(0.0im, c)
         end
@@ -107,8 +107,8 @@ function update!(view::JuliaView)
     δ = 0.5 * view.diameter + 0.5 * step
     corner = view.center - complex(δ, δ)
 
-    Threads.@threads for j = 1:width
-        for i = 1:height
+    Threads.@threads for j in 1:width
+        for i in 1:height
             z = corner + step * complex(i, j)
             @inbounds array[i, j] = escape_time(z, view.parameter)
         end
@@ -217,7 +217,6 @@ function add_buttons!(figure, frames, state)
         create_plot!(frames[1])
         create_plot!(frames[2])
     end
-
 end
 
 # ╔═╡ 6ba1207f-7f5c-4527-8e50-c79474f25588

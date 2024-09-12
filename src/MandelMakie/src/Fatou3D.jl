@@ -177,7 +177,7 @@ function Fatou3D(f::Function, c::Number = 0.0im; show_critical_points = false)
             segments = 20
             path_length = length(attractor)
             trace = Vector{Vec3f}(undef, path_length * segments + 1)
-            for i = 1:path_length
+            for i in 1:path_length
                 start_index, end_index = i, mod1(i + 1, path_length)
                 v1 = $vectors[start_index]
                 v2 = $vectors[end_index]

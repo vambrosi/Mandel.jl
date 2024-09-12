@@ -25,7 +25,7 @@ function orbit(f::Function, z::Number, c::Number, iterates::Integer)
     zs = Vector{ComplexF64}(undef, iterates + 1)
     zs[1] = z
 
-    for i = 2:(iterates+1)
+    for i in 2:(iterates+1)
         zs[i] = f(zs[i-1], c)
     end
 
@@ -222,7 +222,7 @@ function convergence_time(
     ε::Float64,
     max_iterations::Int,
 ) where {T<:PointLike}
-    for iteration = 0:max_iterations
+    for iteration in 0:max_iterations
         for attractor in attractors
             near, d = is_nearby(z, attractor.cycle, ε)
             near && (return iteration, d, attractor)
@@ -245,7 +245,7 @@ const MaybeCloseBy = Union{Nothing,CloseBy}
 function period_multiple_apart(f, z, c, ε, max_iterations)
     slow = fast = z
 
-    for n = 1:max_iterations
+    for n in 1:max_iterations
         slow = f(slow, c)
         fast = f(f(fast, c), c)
 
@@ -256,7 +256,7 @@ function period_multiple_apart(f, z, c, ε, max_iterations)
 end
 
 function iterate_until_close(f, z, w, c, ε, max_iterations)
-    for n = 1:max_iterations
+    for n in 1:max_iterations
         z = f(z, c)
 
         distance(z, w) < ε && return CloseBy(n, z, w)
@@ -266,7 +266,7 @@ function iterate_until_close(f, z, w, c, ε, max_iterations)
 end
 
 function iterate_both_until_close(f, z, w, c, ε, max_iterations)
-    for n = 1:max_iterations
+    for n in 1:max_iterations
         z = f(z, c)
         w = f(w, c)
 
@@ -306,7 +306,7 @@ function coeffs(polynomial, z)
     polynomial = expand(polynomial)
     d = Symbolics.degree(polynomial)
 
-    coefficients = ComplexF64[Symbolics.coeff(polynomial, z^d) for d = 1:d]
+    coefficients = ComplexF64[Symbolics.coeff(polynomial, z^d) for d in 1:d]
     prepend!(coefficients, Symbolics.substitute(polynomial, Dict(z => 0)))
     return convert.(ComplexF64, coefficients)
 end
@@ -349,7 +349,7 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
     reference = points.w
 
     orbit = [orbiter]
-    for _ = 1:max_iterations
+    for _ in 1:max_iterations
         orbiter = f(orbiter, c)
         distance(orbiter, reference) <= ε && return orbit
         push!(orbit, orbiter)
@@ -648,7 +648,7 @@ function corner_and_step(view::View)
 end
 
 function mandel_slice!(array, j, f, crit, corner, step, pxs, coloring_data, options)
-    @inbounds for i = 1:pxs
+    @inbounds for i in 1:pxs
         c = convert(attractor_type(coloring_data), corner + step * complex(i, j))
 
         array[i, j] = coloring_data.method(
@@ -672,7 +672,7 @@ function update_grid!(
 )
     futures = Vector{Task}(undef, view.pixels)
 
-    @inbounds for j = 1:view.pixels
+    @inbounds for j in 1:view.pixels
         futures[j] = Threads.@spawn mandel_slice!(
             view.color_levels[],
             j,
@@ -691,7 +691,7 @@ function update_grid!(
 end
 
 function julia_slice!(array, j, f, c, corner, step, pxs, coloring_data, options)
-    @inbounds for i = 1:pxs
+    @inbounds for i in 1:pxs
         z = convert(attractor_type(coloring_data), corner + step * complex(i, j))
 
         array[i, j] = coloring_data.method(
@@ -716,7 +716,7 @@ function update_grid!(
     parameter = convert(attractor_type(view.coloring_data), view.parameter)
     futures = Vector{Task}(undef, view.pixels)
 
-    @inbounds for j = 1:view.pixels
+    @inbounds for j in 1:view.pixels
         futures[j] = Threads.@spawn julia_slice!(
             view.color_levels[],
             j,
@@ -977,7 +977,6 @@ function add_frame_events!(
             if event.action == Mouse.press &&
                is_mouseinside(axis) &&
                (is_topframe || !is_mouseinside(topframe.axis))
-
                 if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
                     view.center = view.init_center
                     view.diameter = view.init_diameter
@@ -1032,7 +1031,6 @@ function add_frame_events!(
             if is_mouseinside(axis) &&
                !is_zooming &&
                (is_topframe || !is_mouseinside(topframe.axis))
-
                 format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
                 time = string(Dates.format(Dates.now(), format))
                 !isdir("imgs") && mkdir("imgs")
@@ -1186,72 +1184,69 @@ function get_coloring_data(map, c, convergence_criterion, projective_metric)
 end
 
 """
-	Viewer(f; <keyword arguments>)
+    Viewer(f; <keyword arguments>)
 
 Create a `Viewer` that plots the Mandelbrot and the Julia sets associated with the \
-function `f`. `f` can have one or two inputs, the second being the parameter. \
-By default, the `Viewer` opens as a separate window.
+function `f`. `f` can have one or two inputs, the second being the parameter. By default, \
+the `Viewer` opens as a separate window.
 
 # Examples
+
 ```julia-repl
-julia> Viewer((z, c) -> z^2 + c, mandel_center=-0.5)
+Viewer((z, c) -> z^2 + c, mandel_center = -0.5)
 ```
+
 ```julia-repl
-julia> f(z, λ) = z^2 + λ / z^2
-julia> crit(λ) = λ^(1/4)
-julia> Viewer(f; crit=crit, mandel_diameter=1.0)
+f(z, λ) = z^2 + λ / z^2
+crit(λ) = λ^(1 / 4)
+Viewer(f; crit = crit, mandel_diameter = 1.0)
 ```
 
 # Shortcuts
 
-- `Right Click Drag`: Pans view.
-- `Mouse Scroll`: Zooms in or out.
-- `Left Click` (parameter space): Chooses parameter.
-- `Left Click` (dynamical space): Chooses orbit initial point.
-- `Ctrl + Left Click`: Resets view to initial `center` and `diameter`.
-- `Ctrl + S`: Saves view that is under the mouse pointer (files in `./imgs`).
+  - `Right Click Drag`: Pans view.
+  - `Mouse Scroll`: Zooms in or out.
+  - `Left Click` (parameter space): Chooses parameter.
+  - `Left Click` (dynamical space): Chooses orbit initial point.
+  - `Ctrl + Left Click`: Resets view to initial `center` and `diameter`.
+  - `Ctrl + S`: Saves view that is under the mouse pointer (files in `./imgs`).
 
 # Arguments
-- `crit = 0.0im`: Function that gives a critical point for each parameter. Used to \
-to plot the Mandelbrot set. If it is a constant function, you can just input the constant \
-directly.
 
-- `c = 0.0im`: Initial parameter used to plot the Julia set.
-
-- `mandel_center = 0.0im`: Initial center of the Mandelbrot plot.
-
-- `mandel_diameter = 4.0`: Initial diameter of the Mandelbrot plot.
-
-- `julia_center = 0.0im`: Initial center of the Julia plot.
-
-- `julia_diameter = 4.0`: Initial diameter of the Julia plot.
-
-- `grid_width = 800`: Width (and height) of the grid of complex numbers used to plot sets.
-
-- `compact_view = true`: If 'true' one of the plots is show as an inset plot, if `false` \
-they are shown side-by-side.
+  - `crit = 0.0im`: Function that gives a critical point for each parameter. Used to plot \
+    the Mandelbrot set. If it is a constant function, you can just input the constant \
+    directly.
+  - `c = 0.0im`: Initial parameter used to plot the Julia set.
+  - `mandel_center = 0.0im`: Initial center of the Mandelbrot plot.
+  - `mandel_diameter = 4.0`: Initial diameter of the Mandelbrot plot.
+  - `julia_center = 0.0im`: Initial center of the Julia plot.
+  - `julia_diameter = 4.0`: Initial diameter of the Julia plot.
+  - `grid_width = 800`: Width (and height) of the grid of complex numbers used to plot \
+    sets.
+  - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if \
+    `false` they are shown side-by-side.
 
 # Coloring Method Options
+
 For the options below, if you want to set different values for the Mandelbrot and Julia \
 set views, set the option to be a tuple with the respective values.
 
-- `convergence_criterion = :escape_time`: Chooses the coloring method for both plots. \
-The options are `:escape_time`, `:near_attractor`, `:almost_periodic`. More details below.
-
-- `projective_metric = false`: Determines which metric will be used to determine \
-distances, the complex plane metric, or the metric on the projective line. The distance \
-between ∞ and a finite point in the plane metric is the inverse of its absolute value.
+  - `convergence_criterion = :escape_time`: Chooses the coloring method for both plots. \
+    The options are `:escape_time`, `:near_attractor`, `:almost_periodic`. More details \
+    below.
+  - `projective_metric = false`: Determines which metric will be used to determine \
+    distances, the complex plane metric, or the metric on the projective line. The \
+    distance between ∞ and a finite point in the plane metric is the inverse of its absolute value.
 
 # Convergence Criteria
 
-- `:escape_time` (default): computes how fast a point approaches ∞;
-- `:almost_periodic`: finds the attracting cycle for each point separately \
-using Floyd's cycle-finding algorithm;
-- `:near_attractor`: computes all attracting cycles in advance, and then computes how \
-fast each point converges to one of those attractors (uses different color gradients \
-for each attractor). This option is only available for the Julia set, and it will \
-default to `:almost_periodic` in the Mandelbrot set case.
-
+  - `:escape_time` (default): computes how fast a point approaches ∞;
+  - `:almost_periodic`: finds the attracting cycle for each point separately using \
+    Floyd's cycle-finding algorithm;
+  - `:near_attractor`: computes all attracting cycles in advance, and then computes how \
+    fast each point converges to one of those attractors (uses different color gradients \
+    for each attractor). This option is only available for the Julia set, and it will \
+    default to `:almost_periodic` in the Mandelbrot set case.
 """
 struct Viewer
     d_system::DynamicalSystem

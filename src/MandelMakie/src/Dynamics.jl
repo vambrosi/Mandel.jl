@@ -10,7 +10,7 @@ function orbit(f::Function, z::Number, c::Number, iterates::Integer)
     zs = Vector{ComplexF64}(undef, iterates + 1)
     zs[1] = z
 
-    for i = 2:(iterates+1)
+    for i in 2:(iterates+1)
         zs[i] = f(zs[i-1], c)
     end
 
@@ -32,6 +32,7 @@ const Point = MVector{2,ComplexF64}
     Mobius(z11::ComplexF64, z21::ComplexF64, z12::ComplexF64, z22::ComplexF64)
 
 A `Mobius` transformation represented by the 2x2 matrix:
+
 ```
 z11 z12
 z21 z22
@@ -75,7 +76,7 @@ function orbit(f::Function, pt::Point, c::Point, length::Int)
     points = Vector{Point}(undef, length)
     points[1] = pt
 
-    for i = 2:length
+    for i in 2:length
         points[i] = f(points[i-1], c)
     end
 
@@ -96,7 +97,7 @@ function escape_time(
 )
     z = z0
 
-    for iter = 1:max_iter
+    for iter in 1:max_iter
         z = f(z, c)
 
         if abs(z) > esc_radius
@@ -118,7 +119,7 @@ function stop_time(
     z = z0
     inv_radius = 1 / 1000 * esc_radius
 
-    for iter = 1:max_iter
+    for iter in 1:max_iter
         z1 = f(z, c)
 
         if abs(z1 - z) <= inv_radius
@@ -149,7 +150,6 @@ function escape_preperiod(
     iter = 1
     period_multiple = 1
     while iter <= max_iter
-
         if abs2(tortoise) > esc_radius
             return mod((iter + 1.0 - log2(log(abs(tortoise)))) / 64.0, 1.0)
         end
@@ -225,7 +225,7 @@ end
 function find_period_multiple(f::Function, pt::Point, c::Point, ε::Real, max_iter::Integer)
     slow = fast = pt
 
-    for period_multiple = 1:max_iter
+    for period_multiple in 1:max_iter
         slow = f(slow, c)
         fast = f(f(fast, c), c)
 
@@ -243,7 +243,7 @@ function iterate_slow_until_close(
     ε::Real,
     max_iter::Integer,
 )
-    for period = 1:max_iter
+    for period in 1:max_iter
         slow = f(slow, c)
 
         distance(slow, fast) <= ε && return NearbyPoints(true, period, slow, fast)
@@ -261,7 +261,7 @@ function orbit_until_close(
     max_iter::Integer,
 )
     orbit = [orbiter]
-    for _ = 1:max_iter
+    for _ in 1:max_iter
         orbiter = f(orbiter, c)
         distance(orbiter, reference) <= ε && return orbit
         push!(orbit, orbiter)
@@ -278,7 +278,7 @@ function iterate_both_until_close(
     ε::Real,
     max_iter::Integer,
 )
-    for iteration = 0:max_iter
+    for iteration in 0:max_iter
         distance(pt1, pt2) <= ε && return NearbyPoints(true, iteration, pt1, pt2)
 
         pt1 = f(pt1, c)
@@ -289,7 +289,6 @@ function iterate_both_until_close(
 end
 
 function multiplier(f::Function, pt::Point, c::Point, ε::Real, max_iter::Integer)
-
     first_approach = find_period_multiple(f, pt, c, ε, max_iter)
     !first_approach.close && return DEFAULT_VALUE
 
@@ -325,7 +324,7 @@ function convergence_time(
 )
     pt = normalize(pt)
 
-    for preperiod = 0:max_iter
+    for preperiod in 0:max_iter
         for (component_index, attractor) in enumerate(attractors)
             for limit_pt in attractor
                 distance(pt, limit_pt) <= ε && return FatouIterationDistance(

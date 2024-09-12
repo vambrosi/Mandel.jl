@@ -97,7 +97,7 @@ function arc(v0, v1, segments)
 
     # Other vectors (by reflecting pt_{i-2} across pt_{i-1} along the arc)
     dot_product = 2 * arc_steps[1] ⋅ arc_steps[2]
-    for i = 3:segments
+    for i in 3:segments
         arc_steps[i] = dot_product * arc_steps[i-1] - arc_steps[i-2]
     end
 
@@ -152,7 +152,7 @@ function View3D(figure, f_proj, c, state; is_mandel, mark)
     trace = @lift begin
         segments = 20
         trace = Vector{Vec3f}(undef, ($path_length - 1) * segments + 1)
-        for i = 2:$path_length
+        for i in 2:$path_length
             v1 = $path_vectors[i-1]
             v2 = $path_vectors[i]
             trace[(i-2)*segments+1:(i-1)*segments] = 1.005 .* arc(v1, v2, segments)
