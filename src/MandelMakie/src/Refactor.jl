@@ -859,8 +859,12 @@ function pick_parameter!(
     coloring_data = julia.coloring_data
     if coloring_data.update_attractors
         T = attractor_type(coloring_data)
-        attractor_list =
-            get_attractors(d_system.map, julia.parameter, projective = (T == Point))
+        attractor_list = get_attractors(
+            d_system.map,
+            julia.parameter,
+            projective = (T == Point),
+            ε = options.convergence_radius / 1000,
+        )
         julia.coloring_data = ColoringData{T}(
             coloring_data.method,
             attractor_list,
@@ -1197,6 +1201,23 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
 
     on(inputs[:convergence_radius].stored_string) do s
         options.convergence_radius = parse(Float64, s)
+
+        coloring_data = julia.coloring_data
+        if coloring_data.update_attractors
+            T = attractor_type(coloring_data)
+            attractor_list = get_attractors(
+                d_system.map,
+                julia.parameter,
+                projective = (T == Point),
+                ε = options.convergence_radius / 1000,
+            )
+            julia.coloring_data = ColoringData{T}(
+                coloring_data.method,
+                attractor_list,
+                coloring_data.update_attractors,
+            )
+        end
+
         update_view!(julia, d_system, options)
         options.is_family && update_view!(mandel, d_system, options)
     end
