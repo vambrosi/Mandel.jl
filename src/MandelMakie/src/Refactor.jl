@@ -1,8 +1,8 @@
 module Refactor
 
-export Viewer, Attractor, get_attractors, get_parameter, critical_points
+export Viewer, Attractor, get_attractors, get_parameter, critical_points, change_color!
 
-using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials
+using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials, HypertextLiteral
 using GLMakie.Colors
 using GLMakie.Colors: LCHab
 using Crayons
@@ -131,13 +131,15 @@ struct Attractor{T}
     period::Int
     multiplier::Float64
     power::Int
+    color::Union{Symbol,LCHab}
     palette::Vector{RGBA{Float64}}
 end
 
 const twilight_RGB = convert.(RGBA{Float64}, cgrad(:twilight))
-Attractor(c::T, m::Number, p::Integer) where {T} = Attractor{T}(c, 1, m, p, twilight_RGB)
+Attractor(c::T, m::Number, p::Integer) where {T} =
+    Attractor{T}(c, 1, m, p, :twilight, twilight_RGB)
 Attractor(c::Vector{T}, m::Number, p::Integer) where {T} =
-    Attractor{T}(c, length(c), m, p, twilight_RGB)
+    Attractor{T}(c, length(c), m, p, :twilight, twilight_RGB)
 
 function Attractor(
     c::Vector{T},
@@ -146,12 +148,22 @@ function Attractor(
     index_color::Int,
     n_colors::Int,
 ) where {T}
-    palette = create_gradient(index_color, n_colors)
-    Attractor{T}(c, length(c), m, p, palette)
+    color, palette = create_gradient(index_color, n_colors)
+    Attractor{T}(c, length(c), m, p, color, palette)
 end
 
-function Base.show(io::IO, attractor::Attractor{T}; indent::Int=0) where {T<:PointLike}
-    indentation = " " ^ indent
+Attractor(attractor::Attractor{T}, color::LCHab, palette::Vector) where {T<:PointLike} =
+    Attractor{T}(
+        attractor.cycle,
+        attractor.period,
+        attractor.multiplier,
+        attractor.power,
+        color,
+        palette,
+    )
+
+function Base.show(io::IO, attractor::Attractor{T}; indent::Int = 0) where {T<:PointLike}
+    indentation = " "^indent
     display_string = indentation * "... ↦ " * string(attractor.cycle[1]) * " ↦ "
 
     for z in attractor.cycle[2:end]
@@ -187,26 +199,68 @@ function Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{T}) where {T
         Palette    = $(sprint(print_palette, attractor.palette)) \n  \
         Cycle      = " * (attractor.period > 1 ? "\n " : ""),
     )
-    show(io, attractor, indent=(attractor.period > 1 ? 3 : 0))
+    show(io, attractor, indent = (attractor.period > 1 ? 3 : 0))
 end
 
 function Base.show(io::IO, m::MIME"text/html", attractor::Attractor{T}) where {T<:PointLike}
     compact = get(io, :compact, false)
     space_name = T == ComplexF64 ? "plane" : "projective line"
 
-    show(
-        io,
-        m,
-        HTML("<table style='width:550px'> \
-                <tr> \
-                    <td colspan=2> Attracting cycle in the complex $space_name: </td> \
-                </tr> \
-                <tr><td> Period </td> <td> $(attractor.period) </td></tr>\
-                <tr><td> Multiplier </td> <td> $(attractor.multiplier) </td></tr> \
-                <tr><td> Degree </td> <td> $(attractor.power) </td></tr> \
-                <tr><td> Cycle  </td> <td>"),
-    )
-    print(io, attractor)
+    if attractor.color isa Symbol
+        show(
+            io,
+            m,
+            @htl """<table style="width:550px"> \
+                    <tr> \
+                        <td colspan=2> Attracting cycle in the complex $space_name: </td> \
+                    </tr> \
+                    <tr>\
+                        <td style="width:20%;"> Period </td>\
+                        <td style="width:80%;"> $(attractor.period) </td>\
+                    </tr>\
+                    <tr>\
+                        <td style="width:20%;"> Multiplier </td>\
+                        <td style="width:80%;"> $(attractor.multiplier) </td>\
+                    </tr>\
+                    <tr>\
+                        <td style="width:20%;"> Degree </td>\
+                        <td style="width:80%;"> $(attractor.power) </td>\
+                    </tr>\
+                    <tr>
+                        <td style="width:20%;"> Color </td>\
+                        <td style="width:80%;"> $(attractor.color) </td>\
+                    </tr>\
+                    <tr><td style="width:20%;"> Cycle  </td> <td style="width:80%;"> """
+        )
+    else
+        color = string(convert(RGB24, attractor.color).color, base = 16)
+        show(
+            io,
+            m,
+            @htl """<table style="width:550px"> \
+                    <tr> \
+                        <td colspan=2> Attracting cycle in the complex $space_name: </td> \
+                    </tr> \
+                    <tr>\
+                        <td style="width:20%;"> Period </td>\
+                        <td style="width:80%;"> $(attractor.period) </td>\
+                    </tr>\
+                    <tr>\
+                        <td style="width:20%;"> Multiplier </td>\
+                        <td style="width:80%;"> $(attractor.multiplier) </td>\
+                    </tr>\
+                    <tr>\
+                        <td style="width:20%;"> Degree </td>\
+                        <td style="width:80%;"> $(attractor.power) </td>\
+                    </tr>\
+                    <tr>
+                        <td style="width:20%;"> Color </td>\
+                        <td style="width:80%; color:#$color;"> ██ $(attractor.color) </td>\
+                    </tr>\
+                    <tr><td style="width:20%;"> Cycle  </td> <td style="width:80%;"> """
+        )
+    end
+    show(io, attractor)
     show(io, m, html"</td> </tr> </table>")
 end
 
@@ -217,6 +271,7 @@ function Base.convert(::Type{Attractor{ComplexF64}}, attractor::Attractor{Point}
         attractor.period,
         attractor.multiplier,
         attractor.power,
+        attractor.color,
         attractor.palette,
     )
 end
@@ -507,7 +562,7 @@ const base_hue_chroma = [
 
 function create_gradient(color_index, n_colors)
     if n_colors == 1
-        return twilight_RGB
+        return :twilight, twilight_RGB
     elseif n_colors < 9
         chroma, hue = base_hue_chroma[color_index]
     else
@@ -515,7 +570,17 @@ function create_gradient(color_index, n_colors)
     end
 
     gradient = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
-    return convert.(RGBA{Float64}, gradient)
+    return LCHab(50, chroma, hue), convert.(RGBA{Float64}, gradient)
+end
+
+function Attractor(attractor::Attractor{T}, color) where {T<:PointLike}
+    color = convert.(LCHab, color)
+    chroma, hue = color.c, color.h
+
+    palette = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
+    palette = convert.(RGBA{Float64}, palette)
+
+    return Attractor(attractor, color, palette)
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -1397,5 +1462,56 @@ end
 Get the parameter used to plot the Julia set in `viewer`.
 """
 get_parameter(viewer::Viewer) = viewer.julia.parameter
+
+"""
+    change_color!(viewer::Viewer, i::Int, chroma, hue)
+
+Change the base color of the gradient of the `i`th attractor. The resulting color will be
+
+```julia
+LCHab{Float64}(50, chroma, hue)
+```
+
+where `LCHab` is defined in `ColorTypes.jl`
+"""
+function change_color!(viewer::Viewer, i::Int, chroma, hue)
+    isempty(viewer.julia.coloring_data.attractors) &&
+        throw("Julia set plot is not using attractors for coloring")
+
+    color = LCHab{Float64}(50, chroma, hue)
+    attractors = viewer.julia.coloring_data.attractors
+    attractors[i] = Attractor(attractors[i], color)
+    update_view!(viewer.julia, viewer.d_system, viewer.options)
+    return nothing
+end
+
+function _change_color!(viewer::Viewer, z::T, chroma, hue) where {T<:PointLike}
+    julia = viewer.julia
+    attractors = julia.coloring_data.attractors
+
+    f = viewer.d_system.map
+    N = viewer.options.max_iterations
+    ε = viewer.options.convergence_radius
+    c = julia.parameter
+
+    attractor_index = 0
+    iterations = 0
+    while attractor_index == 0 && iterations <= N
+        for (i, attractor) in enumerate(attractors)
+            near, _ = is_nearby(z, attractor.cycle, ε)
+            near && (attractor_index = i)
+        end
+
+        z = f(z, c)
+        N += 1
+    end
+
+    attractor_index == 0 && (return nothing)
+
+    attractors[attractor_index] = Attractor(attractors[attractor_index], chroma, hue)
+    update_view!(viewer.julia, viewer.d_system, viewer.options)
+
+    return nothing
+end
 
 end

@@ -23,6 +23,7 @@ begin
     set_parameter! = MandelMakie.set_parameter!
     get_parameter = MandelMakie.get_parameter
     get_attractors = MandelMakie.get_attractors
+	  change_color! = MandelMakie.change_color!
 end
 
 # ╔═╡ 1ba72fef-d5c4-4da4-9c17-4ba0096bf968
@@ -115,6 +116,16 @@ get_parameter(viewer)
 # ╠═╡ disabled = true
 #=╠═╡
 get_attractors(viewer)
+  ╠═╡ =#
+
+# ╔═╡ 51aaaff9-a294-4781-b145-bbad213beebd
+md"""
+The next function changes the base color of the color gradient associated with an attractor.
+"""
+
+# ╔═╡ 386e314d-a970-4de9-b02b-410ab5530f33
+#=╠═╡
+change_color!(viewer, 1, 20, 120)
   ╠═╡ =#
 
 # ╔═╡ 8a161348-be92-47cc-8e3c-62f74b8d96d2
@@ -213,6 +224,8 @@ julia = Julia3D(g, im)
 # ╟─64508179-e449-4d9a-b669-a08cfd5b6df1
 # ╠═b42b3753-33ba-4e25-a01b-b316dbd86787
 # ╠═f1a18d08-d81f-4667-b87a-8d19989b201b
+# ╟─51aaaff9-a294-4781-b145-bbad213beebd
+# ╠═386e314d-a970-4de9-b02b-410ab5530f33
 # ╟─8a161348-be92-47cc-8e3c-62f74b8d96d2
 # ╟─3ba77924-33c1-4d47-8367-379766a58a95
 # ╠═105f8b1b-de30-4f98-986f-9b667b87949b
