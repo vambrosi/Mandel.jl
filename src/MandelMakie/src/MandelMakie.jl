@@ -13,8 +13,7 @@ export Viewer,
     set_parameter!,
     critical_points,
     get_attractors,
-    get_parameter,
-    change_color!
+    get_parameter
 
 using GLMakie, Symbolics, Parameters
 

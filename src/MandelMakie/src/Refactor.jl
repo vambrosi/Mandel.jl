@@ -1,6 +1,6 @@
 module Refactor
 
-export Viewer, Attractor, get_attractors, get_parameter, critical_points, change_color!
+export Viewer, Attractor, get_attractors, get_parameter, critical_points
 
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials, HypertextLiteral
 using GLMakie.Colors
@@ -175,10 +175,21 @@ function Base.show(io::IO, attractor::Attractor{T}; indent::Int = 0) where {T<:P
     print(io, display_string)
 end
 
-function print_palette(io::IO, palette; size = 25)
-    Δ, r = divrem(length(palette), size)
+function print_base_color(io::IO, color)
+    color = convert(RGB24, color).color
+    print(io, "base color ")
+    print(io, Crayon(foreground = color), "██")
+    print(io, Crayon(reset = true))
+end
 
-    position = div(r, 2)
+function print_base_color(io::IO, color::Symbol)
+    print(io, color)
+end
+
+function print_palette(io::IO, palette; size = 15)
+    Δ, r = divrem(length(palette) - 1, size)
+
+    position = div(r, 2) + 1
     for i in 0:size
         color = convert(RGB24, palette[position]).color
         print(io, Crayon(foreground = color), "█")
@@ -196,7 +207,8 @@ function Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{T}) where {T
         Period     = $(attractor.period) \n  \
         Multiplier = $(attractor.multiplier) \n  \
         Degree     = $(attractor.power) \n  \
-        Palette    = $(sprint(print_palette, attractor.palette)) \n  \
+        Palette    = $(sprint(print_palette, attractor.palette)) \
+        ($(sprint(print_base_color, attractor.color))) \n  \
         Cycle      = " * (attractor.period > 1 ? "\n " : ""),
     )
     show(io, attractor, indent = (attractor.period > 1 ? 3 : 0))
@@ -380,6 +392,33 @@ function multiplier(f, z0, c, _, ε, max_iterations)
 
     preperiod = points.iterations
     return OrbitData(preperiod, period)
+end
+
+function attractor_index(z, julia, d_system, options)
+    coloring_data = julia.coloring_data
+    attractors = coloring_data.attractors
+
+    f = d_system.map
+    N = options.max_iterations
+    ε = options.convergence_radius
+    c = julia.parameter
+
+    attractor_index = 0
+    iterations = 0
+
+    z = convert(attractor_type(coloring_data), z)
+
+    while attractor_index == 0 && iterations <= N
+        for (i, attractor) in enumerate(attractors)
+            near, _ = is_nearby(z, attractor.cycle, ε)
+            near && (attractor_index = i)
+        end
+
+        z = f(z, c)
+        N += 1
+    end
+
+    return attractor_index
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -596,6 +635,8 @@ mutable struct Options
     critical_length::Int
     compact_view::Bool
     is_family::Bool
+    projective_metrics::Tuple{Bool,Bool}
+    convergence_criteria::Tuple{Symbol,Symbol}
 end
 
 mutable struct MandelView <: View
@@ -606,7 +647,7 @@ mutable struct MandelView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    color_levels::Observable{Matrix{RGBA{Float64}}}
+    colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
@@ -616,7 +657,7 @@ mutable struct MandelView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
-        color_levels = zeros(RGBA{Float64}, pixels, pixels)
+        colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = ComplexF64[]
 
@@ -626,7 +667,7 @@ mutable struct MandelView <: View
             pixels,
             center,
             diameter,
-            color_levels,
+            colors,
             points,
             marks,
             coloring_data,
@@ -643,7 +684,7 @@ mutable struct JuliaView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    color_levels::Observable{Matrix{RGBA{Float64}}}
+    colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
 
@@ -653,7 +694,7 @@ mutable struct JuliaView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
-        color_levels = zeros(RGBA{Float64}, pixels, pixels)
+        colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = ComplexF64[]
 
@@ -664,7 +705,7 @@ mutable struct JuliaView <: View
             pixels,
             center,
             diameter,
-            color_levels,
+            colors,
             points,
             marks,
             coloring_data,
@@ -768,7 +809,7 @@ function update_grid!(
 
     @inbounds for j in 1:view.pixels
         futures[j] = Threads.@spawn mandel_slice!(
-            view.color_levels[],
+            view.colors[],
             j,
             d_system.map,
             d_system.critical_point,
@@ -812,7 +853,7 @@ function update_grid!(
 
     @inbounds for j in 1:view.pixels
         futures[j] = Threads.@spawn julia_slice!(
-            view.color_levels[],
+            view.colors[],
             j,
             d_system.map,
             parameter,
@@ -831,7 +872,7 @@ end
 function update_view!(view::View, d_system::DynamicalSystem, options::Options)
     corner, step = corner_and_step(view)
     update_grid!(view, d_system, corner, step, options)
-    notify(view.color_levels)
+    notify(view.colors)
     notify(view.points)
     notify(view.marks)
 
@@ -935,13 +976,24 @@ function create_frames!(figure, options, mandel::MandelView, julia)
     return Frame(left_axis, mandel, Dict()), Frame(right_axis, julia, Dict())
 end
 
-function create_plot!(frame::Frame)
+function delete_plots!(frame::Frame)
     empty!(frame.axis)
+    empty!(frame.events)
+
+    view = frame.view[]
+
+    # Clear old listeners (point_vectors, mark_vectors)
+    empty!(view.points.listeners)
+    empty!(view.marks.listeners)
+end
+
+function create_plot!(frame::Frame)
+    delete_plots!(frame)
     view = frame.view[]
 
     heatmap!(
         frame.axis,
-        view.color_levels,
+        view.colors,
         colormap = :twilight,
         colorrange = (0.0, 1.0),
         inspectable = false,
@@ -1018,12 +1070,13 @@ function save_view(filename::String, view::View)
     hidedecorations!(ax)
     hidespines!(ax)
 
-    heatmap!(ax, view.color_levels[], colormap = :twilight, colorrange = (0.0, 1.0))
+    heatmap!(ax, view.colors[], colormap = :twilight, colorrange = (0.0, 1.0))
 
     Makie.save(filename, fig)
 end
 
 function add_frame_events!(
+    figure::Figure,
     frame::Frame,
     topframe::Frame,
     d_system::DynamicalSystem,
@@ -1083,6 +1136,17 @@ function add_frame_events!(
                     update_view!(view, d_system, options)
                     reset_limits!(axis)
 
+                    return Consume(true)
+
+                elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
+                       view == julia &&
+                       options.convergence_criteria[2] != :almost_periodic
+                    z = to_complex_plane(julia, mouseposition(scene))
+                    i = attractor_index(z, julia, d_system, options)
+
+                    i == 0 && (return Consume(true))
+
+                    change_color!(figure, julia, i, d_system, options)
                     return Consume(true)
                 end
 
@@ -1226,7 +1290,7 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
         inputs[:switch_layout] = Button(layout[1, 1], label = "↰", halign = :left)
         inputs[:switch_positions] = Button(layout[1, 2], label = "↔", halign = :left)
 
-        on(inputs[:switch_layout].clicks, priority = 300) do event
+        on(inputs[:switch_layout].clicks, priority = 200) do event
             if options.compact_view
                 left_frame.axis.width = nothing
                 left_frame.axis.height = nothing
@@ -1253,7 +1317,7 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
             options.compact_view = !options.compact_view
         end
 
-        on(inputs[:switch_positions].clicks, priority = 300) do event
+        on(inputs[:switch_positions].clicks, priority = 200) do event
             left_frame.view[], right_frame.view[] = right_frame.view[], left_frame.view[]
             create_plot!(left_frame)
             create_plot!(right_frame)
@@ -1323,6 +1387,7 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
   - `Mouse Scroll`: Zooms in or out.
   - `Left Click` (parameter space): Chooses parameter.
   - `Left Click` (dynamical space): Chooses orbit initial point.
+  - `Shift + Left Click`: Change color of the basin of attraction.
   - `Ctrl + Left Click`: Resets view to initial `center` and `diameter`.
   - `Ctrl + S`: Saves view that is under the mouse pointer (files in `./imgs`).
 
@@ -1397,7 +1462,16 @@ struct Viewer
 
         # Create Viewer Data
         d_system = DynamicalSystem(f, crit)
-        options = Options(1e-3, 200, 1, 1, compact_view, is_family)
+        options = Options(
+            1e-3,
+            200,
+            1,
+            1,
+            compact_view,
+            is_family,
+            projective_metrics,
+            convergence_criteria,
+        )
         figure = Figure(size = (750, 650))
 
         mandel_coloring = get_coloring_data(
@@ -1436,14 +1510,14 @@ struct Viewer
         left_frame, right_frame = create_frames!(figure, options, mandel, julia)
 
         if is_family
-            add_frame_events!(right_frame, left_frame, d_system, options, julia)
-            add_frame_events!(left_frame, left_frame, d_system, options, julia)
+            add_frame_events!(figure, right_frame, left_frame, d_system, options, julia)
+            add_frame_events!(figure, left_frame, left_frame, d_system, options, julia)
 
             create_plot!(left_frame)
             update_view!(mandel, d_system, options)
             mandel.points[] = [julia.parameter]
         else
-            add_frame_events!(right_frame, right_frame, d_system, options, julia)
+            add_frame_events!(figure, right_frame, right_frame, d_system, options, julia)
         end
 
         create_plot!(right_frame)
@@ -1484,53 +1558,81 @@ Get the parameter used to plot the Julia set in `viewer`.
 """
 get_parameter(viewer::Viewer) = viewer.julia.parameter
 
-"""
-    change_color!(viewer::Viewer, i::Int, chroma, hue)
-
-Change the base color of the gradient of the `i`th attractor. The resulting color will be
-
-```julia
-LCHab{Float64}(50, chroma, hue)
-```
-
-where `LCHab` is defined in `ColorTypes.jl`
-"""
-function change_color!(viewer::Viewer, i::Int, chroma, hue)
-    isempty(viewer.julia.coloring_data.attractors) &&
+function change_color!(julia, i, chroma, hue, d_system, options)
+    isempty(julia.coloring_data.attractors) &&
         throw("Julia set plot is not using attractors for coloring")
 
     color = LCHab{Float64}(50, chroma, hue)
-    attractors = viewer.julia.coloring_data.attractors
+    attractors = julia.coloring_data.attractors
     attractors[i] = Attractor(attractors[i], color)
-    update_view!(viewer.julia, viewer.d_system, viewer.options)
+    update_view!(julia, d_system, options)
     return nothing
 end
 
-function _change_color!(viewer::Viewer, z::T, chroma, hue) where {T<:PointLike}
-    julia = viewer.julia
+function change_color!(figure, julia, i, d_system, options)
+    ax = PolarAxis(figure[1, 1], width = Relative(1.01), height = Relative(1.01))
+
+    ax.rzoomlock = true
+    ax.thetazoomlock = true
+    ax.fixrmin = true
+    ax.r_translation_button = false
+    ax.theta_translation_button = false
+
+    chromas = 0:100
+    hues = 0:360
+    cs = [LCHab(50, c, h) for h in hues, c in chromas]
+
+    surface!(
+        ax,
+        0 .. 2pi,
+        0 .. 100,
+        zeros(size(cs)) .+ 100,
+        color = cs,
+        shading = NoShading,
+    )
+    ax.gridz[] = 200
+
     attractors = julia.coloring_data.attractors
+    colors = [attractor.color for attractor in attractors if !isa(attractor.color, Symbol)]
 
-    f = viewer.d_system.map
-    N = viewer.options.max_iterations
-    ε = viewer.options.convergence_radius
-    c = julia.parameter
-
-    attractor_index = 0
-    iterations = 0
-    while attractor_index == 0 && iterations <= N
-        for (i, attractor) in enumerate(attractors)
-            near, _ = is_nearby(z, attractor.cycle, ε)
-            near && (attractor_index = i)
-        end
-
-        z = f(z, c)
-        N += 1
+    if !isempty(colors)
+        chromas = [color.c for color in colors]
+        hues = [color.h for color in colors] .* 2pi ./ 360
+        scatter!(
+            ax,
+            hues,
+            chromas,
+            zeros(size(colors)) .+ 301,
+            color = colors,
+            markersize = 8,
+        )
+        scatter!(
+            ax,
+            hues,
+            chromas,
+            zeros(size(colors)) .+ 300,
+            color = :black,
+            markersize = 16,
+        )
     end
 
-    attractor_index == 0 && (return nothing)
+    tightlimits!(ax)
+    hidedecorations!(ax)
 
-    attractors[attractor_index] = Attractor(attractors[attractor_index], chroma, hue)
-    update_view!(viewer.julia, viewer.d_system, viewer.options)
+    colorpicker = on(events(ax.scene).mousebutton, priority = 300, weak = true) do event
+        mp = mouseposition(ax.scene)
+        if event.button == Mouse.left && event.action == Mouse.press
+            w = complex(mp[1], mp[2])
+            r = abs(w)
+            θ = 360 * angle(w) / 2pi
+            change_color!(julia, i, r, θ, d_system, options)
+
+            delete!(ax)
+            off(colorpicker)
+        end
+
+        return Consume(true)
+    end
 
     return nothing
 end
