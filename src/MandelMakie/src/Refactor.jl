@@ -84,12 +84,38 @@ function extend_family(f::Function)
     value = Symbolics.value(frac)
 
     num, den = Symbolics.arguments(value)
-    fu = build_function(num, u, v, a, b, expression = Val{false})
-    fv = build_function(den, u, v, a, b, expression = Val{false})
+    f1 = build_function(num, u, v, a, b, expression = Val{false})
+    f2 = build_function(den, u, v, a, b, expression = Val{false})
 
     g(z, c) = f(z, c)
-    g(z::Point, c::Number) = normalize(Point(fu(z..., c, 1), fv(z..., c, 1)))
-    g(z::Point, c::Point) = normalize(Point(fu(z..., c...), fv(z..., c...)))
+    g(z::Point, c::Number) = normalize(Point(f1(z..., c, 1), f2(z..., c, 1)))
+    g(z::Point, c::Point) = normalize(Point(f1(z..., c...), f2(z..., c...)))
+
+    df_symb_00 = expand_derivatives(Differential(u)(simplify(f(u, a))))
+    df_symb_0∞ = expand_derivatives(Differential(u)(simplify(1 / f(u, a))))
+    df_symb_∞0 = expand_derivatives(Differential(u)(simplify(f(1 / u, a))))
+    df_symb_∞∞ = expand_derivatives(Differential(u)(simplify(1 / f(1 / u, a))))
+
+    df_00 = build_function(df_symb_00, u, a, expression = Val{false})
+    df_0∞ = build_function(df_symb_0∞, u, a, expression = Val{false})
+    df_∞0 = build_function(df_symb_∞0, u, a, expression = Val{false})
+    df_∞∞ = build_function(df_symb_∞∞, u, a, expression = Val{false})
+
+    function g(orbit::Vector{ComplexF64}, c::ComplexF64)
+        n = length(orbit)
+        λ = 1
+
+        for i in 1:n
+            z, w = orbit[i], orbit[mod1(i + 1, n)]
+            if abs(z) < 1
+                λ *= abs(w) < 1 ? df_00(z, c) : df_0∞(z, c)
+            else
+                λ *= abs(w) < 1 ? df_∞0(z, c) : df_∞∞(z, c)
+            end
+        end
+
+        return λ
+    end
 
     return g
 end
@@ -530,10 +556,16 @@ function get_attractors(f::Function, c::Number; projective::Bool = false, ε::Re
         end
     end
 
-    projective || (orbits = convert.(Vector{ComplexF64}, orbits))
+    plane_orbits = convert.(Vector{ComplexF64}, orbits)
+    multipliers = [abs(g(o, c)) for o in plane_orbits]
+
+    projective || (orbits = plane_orbits)
 
     n = length(orbits)
-    a = [Attractor(o, 0.0, p, i, n) for (i, (o, p)) in enumerate(zip(orbits, powers))]
+    a = [
+        Attractor(o, m, p, i, n) for
+        (i, (o, m, p)) in enumerate(zip(orbits, multipliers, powers))
+    ]
 
     return a
 end
@@ -557,7 +589,9 @@ function to_color(iterations::Integer, d::Number, attractor::Attractor)
     depth = iterations / attractor.period
 
     if d > 0
-        depth -= log(attractor.multiplier, d)
+        if attractor.multiplier < 1
+            depth -= log(attractor.multiplier, d)
+        end
         if attractor.power > 1
             depth -= log(attractor.power, -log(d))
         end
