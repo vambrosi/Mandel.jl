@@ -4,7 +4,6 @@ export Viewer, Attractor, get_attractors, get_parameter, critical_points
 
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials, HypertextLiteral
 using GLMakie.Colors
-using GLMakie.Colors: LCHab
 using Crayons
 
 import Dates, Nemo
@@ -441,7 +440,7 @@ function attractor_index(z, julia, d_system, options)
         end
 
         z = f(z, c)
-        N += 1
+        iterations += 1
     end
 
     return attractor_index
@@ -1506,7 +1505,7 @@ struct Viewer
             projective_metrics,
             convergence_criteria,
         )
-        figure = Figure(size = (750, 650))
+        figure = Figure(size = (800, 850))
 
         mandel_coloring = get_coloring_data(
             d_system.map,
