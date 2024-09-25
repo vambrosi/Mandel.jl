@@ -99,3 +99,13 @@ profile(:near_attractor, false)
 # near_attractor      plane         358.019 ms (7050615 allocations: 283.80 MiB)
 # near_attractor      projective    573.090 ms (7050616 allocations: 322.89 MiB)
 # Why do we get significant speed increases and less allocations?
+
+# After making Attractor mutable
+# Criterion           Metric        Benchmark
+# escape_time         plane         152.065 ms (6131575 allocations: 202.67 MiB)
+# escape_time         projective    663.850 ms (6131576 allocations: 241.76 MiB)
+# almost_periodic     plane         209.421 ms (11530682 allocations: 469.35 MiB)
+# almost_periodic     projective    1.094 s (11530683 allocations: 567.04 MiB)
+# near_attractor      plane         331.953 ms (6410682 allocations: 215.45 MiB)
+# near_attractor      projective    547.363 ms (6410683 allocations: 254.54 MiB)
+# Makes it faster and uses less allocations

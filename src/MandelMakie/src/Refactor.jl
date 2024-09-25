@@ -151,20 +151,21 @@ const PointLike = Union{ComplexF64,Point}
 Base.convert(::Type{PointLike}, z::Number) = ComplexF64(z)
 Base.convert(::Type{ComplexF64}, z::Point) = to_complex_plane(z)
 
-struct Attractor{T}
+mutable struct Attractor{T}
     cycle::Union{T,Vector{T}}
     period::Int
     multiplier::Float64
     power::Int
     color::Union{Symbol,LCHab}
     palette::Vector{RGBA{Float64}}
+    continuous_coloring::Bool
 end
 
 const twilight_RGB = convert.(RGBA{Float64}, cgrad(:twilight))
 Attractor(c::T, m::Number, p::Integer) where {T} =
-    Attractor{T}(c, 1, m, p, :twilight, twilight_RGB)
+    Attractor{T}(c, 1, m, p, :twilight, twilight_RGB, true)
 Attractor(c::Vector{T}, m::Number, p::Integer) where {T} =
-    Attractor{T}(c, length(c), m, p, :twilight, twilight_RGB)
+    Attractor{T}(c, length(c), m, p, :twilight, twilight_RGB, true)
 
 function Attractor(
     c::Vector{T},
@@ -174,28 +175,23 @@ function Attractor(
     n_colors::Int,
 ) where {T}
     color, palette = create_gradient(index_color, n_colors)
-    Attractor{T}(c, length(c), m, p, color, palette)
+    Attractor{T}(c, length(c), m, p, color, palette, true)
 end
-
-Attractor(attractor::Attractor{T}, color::LCHab, palette::Vector) where {T<:PointLike} =
-    Attractor{T}(
-        attractor.cycle,
-        attractor.period,
-        attractor.multiplier,
-        attractor.power,
-        color,
-        palette,
-    )
 
 function Base.show(io::IO, attractor::Attractor{T}; indent::Int = 0) where {T<:PointLike}
     indentation = " "^indent
-    display_string = indentation * "... ↦ " * string(attractor.cycle[1]) * " ↦ "
 
-    for z in attractor.cycle[2:end]
-        display_string *= "\n" * indentation * "     ↦ " * string(z) * " ↦ "
+    if attractor.cycle isa Number
+        display_string = indentation * "... ↦ " * string(attractor.cycle) * " ↦ ..."
+    else
+        display_string = indentation * "... ↦ " * string(attractor.cycle[1]) * " ↦ "
+
+        for z in attractor.cycle[2:end]
+            display_string *= "\n" * indentation * "     ↦ " * string(z) * " ↦ "
+        end
+
+        display_string *= "..."
     end
-
-    display_string *= "..."
 
     print(io, display_string)
 end
@@ -240,7 +236,6 @@ function Base.show(io::IO, ::MIME"text/plain", attractor::Attractor{T}) where {T
 end
 
 function Base.show(io::IO, m::MIME"text/html", attractor::Attractor{T}) where {T<:PointLike}
-    compact = get(io, :compact, false)
     space_name = T == ComplexF64 ? "plane" : "projective line"
 
     if attractor.color isa Symbol
@@ -310,6 +305,7 @@ function Base.convert(::Type{Attractor{ComplexF64}}, attractor::Attractor{Point}
         attractor.power,
         attractor.color,
         attractor.palette,
+        attractor.continuous_coloring,
     )
 end
 
@@ -587,16 +583,20 @@ function to_color(iterations::Integer, d::Number, attractor::Attractor)
     d = max(d, 0)
     depth = iterations / attractor.period
 
-    if d > 0
-        if attractor.multiplier < 1
-            depth -= log(attractor.multiplier, d)
+    if attractor.continuous_coloring
+        if d > 0
+            if attractor.multiplier < 1
+                depth -= log(attractor.multiplier, d)
+            end
+            if attractor.power > 1
+                depth -= log(attractor.power, -log(d))
+            end
         end
-        if attractor.power > 1
-            depth -= log(attractor.power, -log(d))
-        end
+
+        return attractor.palette[round(Int, 509 * mod(depth / 64.0, 1.0) + 1)]
     end
 
-    return attractor.palette[round(Int, 509 * mod(depth / 64.0, 1.0) + 1)]
+    return attractor.palette[127*mod(round(Int, depth), 4)+1]
 end
 
 to_color(::Nothing) = DEFAULT_COLOR
@@ -645,14 +645,17 @@ function create_gradient(color_index, n_colors)
     return LCHab(50, chroma, hue), convert.(RGBA{Float64}, gradient)
 end
 
-function Attractor(attractor::Attractor{T}, color) where {T<:PointLike}
+function generate_palette!(attractor::Attractor{T}, color) where {T<:PointLike}
     color = convert.(LCHab, color)
     chroma, hue = color.c, color.h
 
     palette = [LCHab(20 * cospi(t) + 50, chroma, hue) for t in range(0.0, 2.0, 510)]
     palette = convert.(RGBA{Float64}, palette)
 
-    return Attractor(attractor, color, palette)
+    attractor.color = color
+    attractor.palette = palette
+
+    return attractor
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -1233,6 +1236,25 @@ function add_frame_events!(
                 return Consume(true)
             end
         end
+
+        if ispressed(scene, Keyboard.c) &&
+           view == julia &&
+           options.convergence_criteria[2] != :almost_periodic
+            if is_mouseinside(axis) &&
+               !is_zooming &&
+               (is_topframe || !is_mouseinside(topframe.axis))
+                z = to_complex_plane(julia, mouseposition(scene))
+                i = attractor_index(z, julia, d_system, options)
+
+                i == 0 && (return Consume(true))
+
+                julia.coloring_data.attractors[i].continuous_coloring =
+                    !julia.coloring_data.attractors[i].continuous_coloring
+
+                update_view!(julia, d_system, options)
+                return Consume(true)
+            end
+        end
     end
 end
 
@@ -1597,7 +1619,7 @@ function change_color!(julia, i, chroma, hue, d_system, options)
 
     color = LCHab{Float64}(50, chroma, hue)
     attractors = julia.coloring_data.attractors
-    attractors[i] = Attractor(attractors[i], color)
+    generate_palette!(attractors[i], color)
     update_view!(julia, d_system, options)
     return nothing
 end
