@@ -160,11 +160,10 @@ struct Attractor{T}
     palette::Vector{RGBA{Float64}}
 end
 
-const twilight_RGB = convert.(RGBA{Float64}, cgrad(:twilight))
 Attractor(c::T, m::Number, p::Integer) where {T} =
-    Attractor{T}(c, 1, m, p, :twilight, twilight_RGB)
+    Attractor{T}(c, 1, m, p, :twilight, default_gradient(0))
 Attractor(c::Vector{T}, m::Number, p::Integer) where {T} =
-    Attractor{T}(c, length(c), m, p, :twilight, twilight_RGB)
+    Attractor{T}(c, length(c), m, p, :twilight, default_gradient(0))
 
 function Attractor(
     c::Vector{T},
@@ -573,12 +572,66 @@ end
 # Coloring Algorithms
 # --------------------------------------------------------------------------------------- #
 
-const DEFAULT_COLOR_LEVEL = 0.5
-const DEFAULT_COLOR = twilight_RGB[255]
+function rgb_to_oklab(c::RGB{T}) where T
+    l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
+	m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
+	s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
+
+    l = cbrt(l)
+    m = cbrt(m)
+    s = cbrt(s)
+
+    return Oklab{T}(
+        0.2104542553*l + 0.7936177850*m - 0.0040720468*s,
+        1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
+        0.0259040371*l + 0.7827717662*m - 0.8086757660*s,
+    )
+end
+
+function rgb_to_oklch(c::RGB{T}) where T
+    color = rgb_to_oklab(c)
+    chroma = sqrt(color.a^2 + color.b^2)
+    hue = atand(color.b, color.a)
+    hue = hue < 0 ? hue + 360 : hue
+
+    return Oklch{T}(color.l, chroma, hue)
+end
+
+function oklab_to_rgb(c::Oklab{T}) where T
+    l = c.l + 0.3963377774 * c.a + 0.2158037573 * c.b
+    m = c.l - 0.1055613458 * c.a - 0.0638541728 * c.b
+    s = c.l - 0.0894841775 * c.a - 1.2914855480 * c.b
+
+    l = l^3
+    m = m^3
+    s = s^3
+
+    return RGB{T}(
+		+4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+		-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+    )
+end
+
+function oklch_to_rgb(c::Oklch{T}) where T
+    b, a = c.c .* sincos(deg2rad(c.h))
+    return oklab_to_rgb(Oklab{T}(c.l, a, b))
+end
+
+function default_gradient(shift)
+    grad_RGB = convert.(RGB, cgrad(:twilight))
+    grad_oklch = rgb_to_oklch.(grad_RGB)
+    grad_oklch = [Oklch(c.l, c.c, c.h + shift) for c in grad_oklch]
+
+    return oklch_to_rgb.(grad_oklch)
+end
+
+const TWILIGHT_RGB = default_gradient(0)
+const DEFAULT_COLOR = TWILIGHT_RGB[255]
 
 function to_color(approach::OrbitData)
     depth = mod(approach.preperiod / approach.period / 64.0, 1.0)
-    return twilight_RGB[round(Int, 509 * depth + 1)]
+    return TWILIGHT_RGB[round(Int, 509 * depth + 1)]
 end
 
 to_color(::Integer, ::Number, ::Nothing) = DEFAULT_COLOR
@@ -634,7 +687,7 @@ const base_hue_chroma = [
 
 function create_gradient(color_index, n_colors)
     if n_colors == 1
-        return :twilight, twilight_RGB
+        return :twilight, default_gradient(0)
     elseif n_colors < 9
         chroma, hue = base_hue_chroma[color_index]
     else
