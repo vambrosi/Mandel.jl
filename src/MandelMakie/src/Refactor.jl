@@ -447,11 +447,22 @@ end
 # Finding Attractors
 # --------------------------------------------------------------------------------------- #
 
+"""
+Given the family of functions, and the parameter, returns the polynomial's 
+coefficients. If it is not polynomial, then it will fail probably.
+"""
+function parameter_to_coeficients(func, parameter)
+    @variables z, c
+    f = func(z, c) |> Symbolics.value
+    parameter = convert(ComplexF64, parameter)
+    return coeffs(substitute(f, Dict(c => parameter)), z)
+end
+
 function coeffs(polynomial, z)
     polynomial = expand(polynomial)
     d = Symbolics.degree(polynomial)
 
-    coefficients = ComplexF64[Symbolics.coeff(polynomial, z^d) for d in 1:d]
+    coefficients::Vector{ComplexF64} = [Symbolics.coeff(polynomial, z^d) for d in 1:d]
     prepend!(coefficients, Symbolics.substitute(polynomial, Dict(z => 0)))
     return convert.(ComplexF64, coefficients)
 end
@@ -1021,7 +1032,7 @@ function pick_parameter!(
         options.critical_length - 1,
     )
 
-    for (ray, new_ray) in zip(julia.rays, Rays.rays([julia.parameter, 0, 1]))
+    for (ray, new_ray) in zip(julia.rays, Rays.rays(parameter_to_coeficients(d_system.map, julia.parameter)))
         ray[] = new_ray
     end
 
@@ -1699,7 +1710,7 @@ struct Viewer
         store_schemes!(options, julia_coloring.attractors)
 
         julia.marks[] = [d_system.critical_point(julia.parameter)]
-        julia.rays = [Observable(ray) for ray in Rays.rays([julia.parameter, 0, 1])]
+        julia.rays = [Observable(ray) for ray in Rays.rays(parameter_to_coeficients(d_system.map, julia.parameter))]
         pick_orbit!(julia, d_system, options, julia.points[][begin])
 
         left_frame, right_frame = create_frames!(figure, options, mandel, julia)
