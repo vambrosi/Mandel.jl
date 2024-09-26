@@ -39,10 +39,10 @@ First, you define a family of complex maps
 """
 
 # ╔═╡ f49a6cef-86c9-4a47-a9ff-30588b3de27c
-f(z, λ) = z^2 + λ / z^2
+f(z, c) = z^2 + c
 
 # ╔═╡ 89426560-0874-45a2-a2dd-6b2a044faabb
-crit(λ) = λ^(1 / 4)
+crit(c) = c
 
 # ╔═╡ 6b1c8547-06de-4bb7-9062-0826ad04b92e
 md"""
@@ -50,10 +50,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-# ╠═╡ disabled = true
-#=╠═╡
 Viewer(f; crit = crit, mandel_diameter = 1.0)
-  ╠═╡ =#
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true

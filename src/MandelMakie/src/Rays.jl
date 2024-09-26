@@ -1,6 +1,8 @@
+module Rays
 using LinearAlgebra
 using PolynomialRoots
 
+export PolynomialWrapper, compute_ray!
 # Constants
 eps_land = 1e-5
 eps_coland = 1e-3
@@ -10,27 +12,26 @@ quality = 1
 
 struct PolynomialWrapper
     polynomial::Vector{ComplexF64}
-    stored_psi_values::Dict{Rational{Int64}, Vector{ComplexF64}}
+    stored_psi_values::Dict{Rational{Int64},Vector{ComplexF64}}
     degree::Int
-    
+
     function PolynomialWrapper(polynomial)
-    degree = length(polynomial) - 1 
-    if degree == -1 
-        degree = 0
-    end
-        new(polynomial, Dict{Rational{Int64}, Vector{ComplexF64}}(), degree)
+        degree = length(polynomial) - 1
+        if degree == -1
+            degree = 0
+        end
+        new(polynomial, Dict{Rational{Int64},Vector{ComplexF64}}(), degree)
     end
 end
 
-wrapper = PolynomialWrapper([im,0,1])
-
+wrapper = PolynomialWrapper([im, 0, 1])
 
 function σ(wrapper::PolynomialWrapper, q::Rational{Int64})
     ret = q * wrapper.degree
     return ret - floor(Int, ret)
 end
 
-@assert σ(wrapper,1//7) == 2//7
+@assert σ(wrapper, 1 // 7) == 2 // 7
 
 function newton(wrapper::PolynomialWrapper, z::ComplexF64, guess::ComplexF64)
     p = copy(wrapper.polynomial)
@@ -40,7 +41,7 @@ function newton(wrapper::PolynomialWrapper, z::ComplexF64, guess::ComplexF64)
     return lroots[argmin(abs.(guess .- lroots))]
 end
 
-@assert newton(wrapper,7+0.0im,7+0.0im) == 2.6524580874978474 - 0.18850439234335525im 
+@assert newton(wrapper, 7 + 0.0im, 7 + 0.0im) == 2.6524580874978474 - 0.18850439234335525im
 
 function compute_ray!(wrapper::PolynomialWrapper, θout::Rational{Int64})
     if haskey(wrapper.stored_psi_values, θout)
@@ -57,7 +58,7 @@ function compute_ray!(wrapper::PolynomialWrapper, θout::Rational{Int64})
         compute_ray!(wrapper, σ(wrapper, θout))
         wrapper.stored_psi_values[θout] = ComplexF64[]
         for j in reverse(1:quality)
-            r = 100 * wrapper.degree ^ (j / quality)
+            r = 100 * wrapper.degree^(j / quality)
             num = r * exp(2π * θout * im)
             push!(wrapper.stored_psi_values[θout], num)
         end
@@ -78,7 +79,7 @@ function compute_ray!(wrapper::PolynomialWrapper, θout::Rational{Int64})
         wrapper.stored_psi_values[θ] = ComplexF64[]
     end
     for j in reverse(1:quality)
-        r = 100 * wrapper.degree ^ (j / quality)
+        r = 100 * wrapper.degree^(j / quality)
         for θ in angle_list
             num = r * exp(2π * θ * im)
             push!(wrapper.stored_psi_values[θ], num)
@@ -102,7 +103,10 @@ function landing_point(wrapper::PolynomialWrapper, θ::Rational{Int64})
     return last(wrapper.stored_psi_values[θ])
 end
 
-function co_land(wrapper::PolynomialWrapper, laminations::Vector{Vector{Rational{Int64}}})::Bool
+function co_land(
+    wrapper::PolynomialWrapper,
+    laminations::Vector{Vector{Rational{Int64}}},
+)::Bool
     for eqclass in laminations
         if length(eqclass) < 2
             continue
@@ -117,6 +121,12 @@ function co_land(wrapper::PolynomialWrapper, laminations::Vector{Vector{Rational
     return true
 end
 
+@assert co_land(wrapper, [[1 // 7, 2 // 7, 4 // 7]])
+@assert !co_land(wrapper, [[1 // 7, 1 // 14]])
 
-@assert co_land(wrapper, [[1//7, 2//7, 4//7]])
-@assert !co_land(wrapper, [[1//7, 1//14]])
+function rays(coefficients::Vector{ComplexF64})
+    w = PolynomialWrapper(coefficients)
+    compute_ray!(w, 1 // 7)
+    return collect(values(w.stored_psi_values))
+end
+end
