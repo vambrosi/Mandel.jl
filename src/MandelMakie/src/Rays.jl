@@ -124,9 +124,21 @@ end
 @assert co_land(wrapper, [[1 // 7, 2 // 7, 4 // 7]])
 @assert !co_land(wrapper, [[1 // 7, 1 // 14]])
 
-function rays(coefficients::Vector{ComplexF64})
+function rays(coefficients::Vector{ComplexF64}, periods)
     w = PolynomialWrapper(coefficients)
-    compute_ray!(w, 1 // 7)
+    angles = []
+    for p in periods
+        den = w.degree^p - 1
+        for n in range(0, den - 1)
+            push!(angles, n // den)
+        end
+    end
+    println(angles)
+    for a in angles
+        compute_ray!(w, a)
+    end
+
+    println(keys(w.stored_psi_values))
     return collect(values(w.stored_psi_values))
 end
 end

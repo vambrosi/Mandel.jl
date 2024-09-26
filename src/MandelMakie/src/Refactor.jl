@@ -447,16 +447,6 @@ end
 # Finding Attractors
 # --------------------------------------------------------------------------------------- #
 
-"""
-Given the family of functions, and the parameter, returns the polynomial's 
-coefficients. If it is not polynomial, then it will fail probably.
-"""
-function parameter_to_coeficients(func, parameter)
-    @variables z, c
-    f = func(z, c) |> Symbolics.value
-    parameter = convert(ComplexF64, parameter)
-    return coeffs(substitute(f, Dict(c => parameter)), z)
-end
 
 function coeffs(polynomial, z)
     polynomial = expand(polynomial)
@@ -627,6 +617,17 @@ function find_attractors(f::Function, c::Number; projective::Bool = false)
     return a
 end
 
+
+function rays(func, parameter)
+    @variables z, c
+    f = func(z, c) |> Symbolics.value
+    parameter = convert(ComplexF64, parameter)
+    coefficients = coeffs(substitute(f, Dict(c => parameter)), z)
+
+    periods = unique!([length(a.cycle) for a in find_attractors(func, parameter)])
+    return Rays.rays(coefficients, periods)
+end
+
 # --------------------------------------------------------------------------------------- #
 # Coloring Algorithms
 # --------------------------------------------------------------------------------------- #
@@ -778,6 +779,7 @@ mutable struct MandelView <: View
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
     rays::Vector{Observable{Vector{ComplexF64}}}
+    line_refs::Vector{Any}
 
     coloring_data::ColoringData
 
@@ -800,6 +802,7 @@ mutable struct MandelView <: View
             points,
             marks,
             rays,
+            Vector{Any}[],
             coloring_data,
         )
     end
@@ -818,7 +821,7 @@ mutable struct JuliaView <: View
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
     rays::Vector{Observable{Vector{ComplexF64}}}
-
+    line_refs::Vector{Any}
     coloring_data::ColoringData
 
     function JuliaView(; center, diameter, parameter, pixels, coloring_data)
@@ -841,6 +844,7 @@ mutable struct JuliaView <: View
             points,
             marks,
             rays,
+            Vector{Any}[],
             coloring_data,
         )
     end
@@ -1032,8 +1036,13 @@ function pick_parameter!(
         options.critical_length - 1,
     )
 
-    for (ray, new_ray) in zip(julia.rays, Rays.rays(parameter_to_coeficients(d_system.map, julia.parameter)))
+    new_rays = [Observable(ray) for ray in rays(d_system.map, julia.parameter)]
+    if length(julia.rays) == length(new_rays) 
+    for (ray, new_ray) in zip(julia.rays, rays(d_system.map, julia.parameter))
         ray[] = new_ray
+    end
+    else
+        julia.rays = new_rays
     end
 
     mandel.points[] = [julia.parameter]
@@ -1169,14 +1178,19 @@ function create_plot!(frame::Frame)
 
     lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
 
+    # for r in view.line_refs
+    #     delete!(frame.axis, r)
+    # end
+    # view.line_refs = []
     for ray in view.rays
         ray_vectors = lift(ray) do zs
             xs, ys = to_pixel_space(view, zs)
             return Point2f.(xs, ys)
         end
 
-        lines!(frame.axis, ray_vectors, color = (:yellow, 0.5), inspectable = false)
+        push!(view.line_refs, lines!(frame.axis, ray_vectors, color=(:yellow, 0.5), inspectable=false))
     end
+
 
     scatter!(
         frame.axis,
@@ -1710,7 +1724,8 @@ struct Viewer
         store_schemes!(options, julia_coloring.attractors)
 
         julia.marks[] = [d_system.critical_point(julia.parameter)]
-        julia.rays = [Observable(ray) for ray in Rays.rays(parameter_to_coeficients(d_system.map, julia.parameter))]
+
+        julia.rays = [Observable(ray) for ray in rays(d_system.map, julia.parameter)]
         pick_orbit!(julia, d_system, options, julia.points[][begin])
 
         left_frame, right_frame = create_frames!(figure, options, mandel, julia)
