@@ -9,7 +9,8 @@ begin
     # The lines below activate the environment defined in Project.toml
     # It will install the necessary packages the first time it runs.
     using Pkg
-    Pkg.activate(@__DIR__)
+    Pkg.activate(Base.current_project())
+	  Pkg.instantiate()
 
     # Includes the file with definitions and imports the relevant modules
     include("./src/MandelMakie.jl")

@@ -55,6 +55,36 @@ end
 
 profile(:near_attractor, false)
 
+# Julia Version 1.10.4
+# Commit 48d4fd48430 (2024-06-04 10:41 UTC)
+# Build Info:
+#   Official https://julialang.org/ release
+# Platform Info:
+#   OS: macOS (arm64-apple-darwin22.4.0)
+#   CPU: 8 × Apple M2
+#   WORD_SIZE: 64
+#   LIBM: libopenlibm
+#   LLVM: libLLVM-15.0.7 (ORCJIT, apple-m1)
+# Threads: 4 default, 0 interactive, 2 GC (on 4 virtual cores)
+# Environment:
+#   JULIA_EDITOR = code
+
+# Project MandelMakie v0.1.0
+# Status `~/GitHub/Mandel/src/MandelMakie/Project.toml`
+#   [a8cc5b0e] Crayons v4.1.1
+#   [e9467ef8] GLMakie v0.10.11
+#   [5c1252a2] GeometryBasics v0.4.11
+#   [ac1192a8] HypertextLiteral v0.9.5
+# ⌃ [2edaba10] Nemo v0.46.2
+#   [d96e819e] Parameters v0.12.3
+#   [c3e4b0f8] Pluto v0.19.46
+#   [f27b6e38] Polynomials v4.0.11
+#   [1e83bf80] StaticArraysCore v1.4.3
+#   [0c5d862f] Symbolics v6.13.0
+#   [ade2ca70] Dates
+#   [37e2e46d] LinearAlgebra
+# Info Packages marked with ⌃ have new versions available and may be upgradable.
+
 # RGBA vs RGB benchmark
 
 # PARAMETERS

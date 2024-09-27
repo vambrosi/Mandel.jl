@@ -1652,7 +1652,7 @@ function change_color!(figure, julia, i, d_system, options)
 
     if !isempty(colors)
         chromas = [color.c for color in colors]
-        hues = [color.h for color in colors] .* 2pi ./ 360
+        hues = deg2rad.([color.h for color in colors])
         scatter!(
             ax,
             hues,
@@ -1679,7 +1679,7 @@ function change_color!(figure, julia, i, d_system, options)
         if event.button == Mouse.left && event.action == Mouse.press
             w = complex(mp[1], mp[2])
             r = abs(w)
-            θ = 360 * angle(w) / 2pi
+            θ = rad2deg(angle(w))
             change_color!(julia, i, r, θ, d_system, options)
 
             delete!(ax)
