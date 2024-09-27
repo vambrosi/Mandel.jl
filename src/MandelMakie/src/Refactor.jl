@@ -596,7 +596,7 @@ function to_color(iterations::Integer, d::Number, attractor::Attractor)
         return attractor.palette[round(Int, 509 * mod(depth / 64.0, 1.0) + 1)]
     end
 
-    return attractor.palette[127*mod(round(Int, depth), 4)+1]
+    return attractor.palette[127*mod(round(Int, depth), 4)+95]
 end
 
 to_color(::Nothing) = DEFAULT_COLOR
@@ -1442,6 +1442,7 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
   - `Mouse Scroll`: Zooms in or out.
   - `Left Click` (parameter space): Chooses parameter.
   - `Left Click` (dynamical space): Chooses orbit initial point.
+  - `C` (dynamical space): Change between discrete and continuous coloring.
   - `Shift + Left Click`: Change color of the basin of attraction.
   - `Ctrl + Left Click`: Resets view to initial `center` and `diameter`.
   - `Ctrl + S`: Saves view that is under the mouse pointer (files in `./imgs`).
