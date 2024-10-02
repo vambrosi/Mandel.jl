@@ -457,7 +457,7 @@ end
 
 function critical_points(func, parameter)
     # We use Nemo.jl only to extract numerators and denominators of rational functions.
-    # Using Symbolics.jl seemed to require checking for some edge cases.
+    # Using Symbolics.jl seemed to require checking some edge cases.
 
     # Create the Complex Rational Funtions Field
     CC = Nemo.ComplexField()
@@ -664,6 +664,12 @@ end
 
 abstract type View end
 
+mutable struct ColoringScheme
+    color::Union{Symbol,LCHab}
+    palette::Vector{RGBA{Float64}}
+    continuous_coloring::Bool
+end
+
 mutable struct Options
     convergence_radius::Float64
     max_iterations::Int
@@ -673,6 +679,7 @@ mutable struct Options
     is_family::Bool
     projective_metrics::Tuple{Bool,Bool}
     convergence_criteria::Tuple{Symbol,Symbol}
+    coloring_schemes::Vector{ColoringScheme}
 end
 
 mutable struct MandelView <: View
@@ -947,6 +954,7 @@ function pick_parameter!(
             attractor_list,
             coloring_data.update_attractors,
         )
+        sync_schemes!(options, julia.coloring_data.attractors)
     end
 
     update_view!(julia, d_system, options)
@@ -1251,6 +1259,9 @@ function add_frame_events!(
                 julia.coloring_data.attractors[i].continuous_coloring =
                     !julia.coloring_data.attractors[i].continuous_coloring
 
+                options.coloring_schemes[i].continuous_coloring =
+                    julia.coloring_data.attractors[i].continuous_coloring
+
                 update_view!(julia, d_system, options)
                 return Consume(true)
             end
@@ -1335,6 +1346,7 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
                 attractor_list,
                 coloring_data.update_attractors,
             )
+            sync_schemes!(options, julia.coloring_data.attractors)
         end
 
         update_view!(julia, d_system, options)
@@ -1415,6 +1427,33 @@ function get_coloring_data(map, c, convergence_criterion, projective_metric)
     end
 
     return ColoringData(method, attractors, update_attractors)
+end
+
+function get_scheme(a::Attractor{T}) where {T}
+    return ColoringScheme(a.color, a.palette, a.continuous_coloring)
+end
+
+function store_schemes!(options::Options, attractors::Vector{Attractor{T}}) where {T}
+    options.coloring_schemes = [get_scheme(a) for a in attractors]
+    return options
+end
+
+function sync_schemes!(options::Options, attractors::Vector{Attractor{T}}) where {T}
+    schemes = options.coloring_schemes
+
+    for (s, a) in zip(schemes, attractors)
+        a.color = s.color
+        a.palette = s.palette
+        a.continuous_coloring = s.continuous_coloring
+    end
+
+    start = length(schemes) + 1
+
+    for attractor in attractors[start:end]
+        push!(schemes, get_scheme(attractor))
+    end
+
+    return options
 end
 
 """
@@ -1527,6 +1566,7 @@ struct Viewer
             is_family,
             projective_metrics,
             convergence_criteria,
+            ColoringScheme[],
         )
         figure = Figure(size = (800, 850))
 
@@ -1559,6 +1599,8 @@ struct Viewer
             pixels = grid_width,
             coloring_data = julia_coloring,
         )
+
+        store_schemes!(options, julia_coloring.attractors)
 
         julia.marks[] = [d_system.critical_point(julia.parameter)]
         pick_orbit!(julia, d_system, options, julia.points[][begin])
@@ -1620,7 +1662,12 @@ function change_color!(julia, i, chroma, hue, d_system, options)
 
     color = LCHab{Float64}(50, chroma, hue)
     attractors = julia.coloring_data.attractors
-    generate_palette!(attractors[i], color)
+    attractor = generate_palette!(attractors[i], color)
+
+    options.coloring_schemes[i].color = attractor.color
+    options.coloring_schemes[i].palette = attractor.palette
+    options.coloring_schemes[i].continuous_coloring = attractor.continuous_coloring
+
     update_view!(julia, d_system, options)
     return nothing
 end
