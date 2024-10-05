@@ -6,7 +6,7 @@ function iterate(f, x, λ, ε, type)
             if type == :sa
                 return i - log(2, -log(abs(x)))
             elseif type == :saε
-                return i - log(2, log(sqrt(ε), abs(x)))
+                return i - log(2, log(sqrt(λ), abs(x)))
             elseif type == :a
                 return i - log(abs(λ), abs(x))
             else
@@ -37,7 +37,7 @@ function plot_heights(f, xrange, λrange, εrange, correct)
         iterate.(f, xrange, λ, ε, correct ? :saε : :sa)
     end
 
-    label = correct ? L"n - \log_2(\log_{\sqrt{\varepsilon}}(d))" : L"n - \log_2(-\log(d))"
+    label = correct ? L"n - \log_2(\log_{\sqrt{\lambda}}(d))" : L"n - \log_2(-\log(d))"
     lines!(ax, xrange, ys_a, label = L"n - \log_\lambda (d))")
     lines!(ax, xrange, ys_sa, label = label)
 
