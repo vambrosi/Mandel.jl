@@ -1,4 +1,4 @@
-name = "MandelGTK"
+name = "MandelGtk"
 uuid = "61a4d709-07bc-4d87-825b-e807dca3b60b"
 authors = ["Vinicius Ambrosi <vambrosi@indiana.edu>"]
 version = "0.1.0"
