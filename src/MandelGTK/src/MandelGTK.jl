@@ -26,13 +26,13 @@ function color(iterations::Integer, r::Real)
     return twilight_RGB24[index]
 end
 
-function to_complex_plane(view, height, width, x, y)
-    upp = view.diameter / min(height, width)
+function to_complex_plane(box, height, width, x, y)
+    upp = box.diameter / min(height, width)
 
     a = (x + 0.5 - width / 2) * upp
     b = -(y + 0.5 - height / 2) * upp
 
-    return view.center + complex(a, b)
+    return box.center + complex(a, b)
 end
 
 function on_release(controller, n_press, x, y, view, f)
@@ -45,20 +45,18 @@ function on_release(controller, n_press, x, y, view, f)
     h = height(canvas)
     w = width(canvas)
 
-    Gtk4.GLib.g_idle_add() do
-        z1 = to_complex_plane(view, h, w, view.dragstart...)
-        z2 = to_complex_plane(view, h, w, x, y)
+    z1 = to_complex_plane(view.box, h, w, view.dragstart...)
+    z2 = to_complex_plane(view.box, h, w, x, y)
 
-        view.center += z1 - z2
-        plt = plot!(view, f, w, h)
+    view.box.center += z1 - z2
+    plt = plot(view.box, f, w, h)
 
-        surface = CairoImageSurface(plt)
-        set_source_surface(ctx, surface)
-        paint(ctx)
-        reveal(canvas)
-        false
-    end
+    surface = CairoImageSurface(plt)
+    set_source_surface(ctx, surface)
+    paint(ctx)
+    reveal(canvas)
 
+    view.plot = plt
     return
 end
 
@@ -88,30 +86,78 @@ function on_motion(controller, x, y, view)
     return
 end
 
-# function on_zoom(controller, x, y, view, f)
-#     view.pressed && return
+function zoom!(view, canvas, ctx, f, h, w, pointer)
+    box = deepcopy(view.box)
 
-#     canvas = widget(controller)
-#     ctx = getgc(canvas)
+    inv_scale = 1 / view.scale
+    z = to_complex_plane(box, h, w, view.pointer...)
 
-#     h = height(canvas)
-#     w = width(canvas)
+    box.diameter *= inv_scale
+    box.center = inv_scale * box.center + (1 - inv_scale) * z
 
-#     set_source_rgb(ctx, 1, 1, 1)
-#     rectangle(ctx, 0, 0, w, h)
-#     fill(ctx)
+    plt = plot(box, f, w, h)
 
-#     translate(ctx, view.pointer[1], view.pointer[2])
-#     scale(ctx, view.scale, view.scale)
-#     paint(ctx)
-#     translate(ctx, 0, 0)
+    surface = CairoImageSurface(plt)
+    set_source_surface(ctx, surface, 0, 0)
+    paint(ctx)
+    reveal(canvas)
 
-#     reveal(canvas)
-# end
+    view.box = box
+    view.scale = 1.0
+    view.plot = plt
 
-mutable struct MandelView
+    return nothing
+end
+
+function on_zoom(controller, Δx, Δy, view, f)
+    view.pressed && return
+    view.zooming = true
+
+    view.scale += Δy * -0.05
+    view.scale = min(max(0.02, view.scale), 50)
+
+    pointer = deepcopy(view.pointer)
+
+    canvas = widget(controller)
+    ctx = getgc(canvas)
+
+    h = height(canvas)
+    w = width(canvas)
+
+    set_source_rgb(ctx, 1, 1, 1)
+    rectangle(ctx, 0, 0, w, h)
+    fill(ctx)
+
+    translate(ctx, pointer[1], pointer[2])
+    scale(ctx, view.scale, view.scale)
+    translate(ctx, -pointer[1], -pointer[2])
+    surface = CairoImageSurface(view.plot)
+    set_source_surface(ctx, surface, Δx, Δy)
+    paint(ctx)
+    reset_transform(ctx)
+    reveal(canvas)
+
+    close(view.zoom_timer)
+    view.zoom_timer = Timer(0.1) do _
+        zoom!(view, canvas, ctx, f, h, w, pointer)
+    end
+
+    return
+end
+
+mutable struct MandelBox
     center::ComplexF64
     diameter::Float64
+end
+
+mutable struct JuliaBox
+    center::ComplexF64
+    diameter::Float64
+    parameter::ComplexF64
+end
+
+mutable struct View
+    box::Union{MandelBox,JuliaBox}
     plot::Matrix{RGB24}
 
     pressed::Bool
@@ -120,9 +166,11 @@ mutable struct MandelView
     dragstart::Vector{Float64}
     pointer::Vector{Float64}
     scale::Float64
+
+    zoom_timer::Timer
 end
 
-function plot!(mandel::MandelView, f::Function, w::Integer, h::Integer)
+function plot(mandel::MandelBox, f::Function, w::Integer, h::Integer)
     plt = Matrix{RGB24}(undef, w, h)
     futures = Vector{Task}(undef, h)
 
@@ -137,26 +185,10 @@ function plot!(mandel::MandelView, f::Function, w::Integer, h::Integer)
     end
 
     wait.(futures)
-    mandel.plot = plt
-
     return plt
 end
 
-mutable struct JuliaView
-    center::ComplexF64
-    diameter::Float64
-    parameter::ComplexF64
-    plot::Matrix{RGB24}
-
-    pressed::Bool
-    zooming::Bool
-
-    dragstart::Vector{Float64}
-    pointer::Vector{Float64}
-    scale::Float64
-end
-
-function plot!(julia::JuliaView, f::Function, w::Integer, h::Integer)
+function plot(julia::JuliaBox, f::Function, w::Integer, h::Integer)
     plt = Matrix{RGB24}(undef, w, h)
     futures = Vector{Task}(undef, h)
 
@@ -171,9 +203,14 @@ function plot!(julia::JuliaView, f::Function, w::Integer, h::Integer)
     end
 
     wait.(futures)
-    julia.plot = plt
-
     return plt
+end
+
+struct Viewer
+    window::GtkWindow
+    canvas::GtkCanvas
+    events::Dict{Symbol,Any}
+    signals::Dict{Symbol,Any}
 end
 
 function viewer(f::Function, c::Number, is_mandel::Bool)
@@ -194,45 +231,53 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
     pointer = [0.0, 0.0]
     scale = 1.0
 
-    view =
-        is_mandel ?
-        MandelView(0.0im, 4.0, plt, pressed, zooming, dragstart, pointer, scale) :
-        JuliaView(0.0im, 4.0, c, plt, pressed, zooming, dragstart, pointer, scale)
+    box = is_mandel ? MandelBox(-0.5, 4.0) : JuliaBox(0.0im, 4.0, c)
+    view = View(
+        box,
+        plt,
+        pressed,
+        zooming,
+        dragstart,
+        pointer,
+        scale,
+        Timer(_ -> nothing, 0.1),
+    )
 
     @guarded draw(canvas) do widget
         ctx = getgc(canvas)
         h = height(canvas)
         w = width(canvas)
 
-        plt = plot!(view, f, w, h)
+        plt = plot(view.box, f, w, h)
         surface = CairoImageSurface(plt)
-
         set_source_surface(ctx, surface, 0, 0)
         paint(ctx)
+
+        view.plot = plt
     end
 
     mouse_left = GtkGestureClick(canvas)
-    signal_connect(mouse_left, "pressed") do controller, n_press, x, y
+    signal_p = signal_connect(mouse_left, "pressed") do controller, n_press, x, y
         view.pressed = true
         view.dragstart = [x, y]
         return
     end
 
-    signal_connect(mouse_left, "released") do args...
+    signal_r = signal_connect(mouse_left, "released") do args...
         on_release(args..., view, f)
     end
 
     mouse_motion = GtkEventControllerMotion(canvas)
-    signal_connect(mouse_motion, "motion") do args...
+    signal_m = signal_connect(mouse_motion, "motion") do args...
         on_motion(args..., view)
     end
 
-    # mouse_scroll =
-    #     GtkEventControllerScroll(Gtk4.EventControllerScrollFlags_VERTICAL, canvas)
+    mouse_scroll =
+        GtkEventControllerScroll(Gtk4.EventControllerScrollFlags_VERTICAL, canvas)
 
-    # signal_connect(mouse_scroll, "scroll") do args...
-    #     on_zoom(args..., view, f)
-    # end
+    signal_s = signal_connect(mouse_scroll, "scroll") do args...
+        on_zoom(args..., view, f)
+    end
 
     show(win)
 
@@ -243,7 +288,23 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
         @async Gtk4.GLib.glib_main()
     end
 
-    return view
+    viewer = Viewer(
+        win,
+        canvas,
+        Dict(
+            :left => mouse_left,
+            :move => mouse_motion,
+            :scroll => mouse_scroll,
+        ),
+        Dict(
+            :press => signal_p,
+            :release => signal_r,
+            :move => signal_m,
+            :scroll => signal_s,
+        ),
+    )
+
+    return viewer
 end
 
 end
