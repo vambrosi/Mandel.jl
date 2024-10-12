@@ -22,7 +22,7 @@ function iteration_matrix(center, radius, pixels)
     for j in 1:pixels
         for i in 1:pixels
             c = corner + pixel_length * complex(i, j)
-            heights[i, j] = height(c, 1000.0, 200) / 20.0
+            heights[i, j] = height(c, 1000.0, 1000) / 20.0
 
             isfinite(heights[i, j]) || (heights[i, j] = 0.5)
         end
@@ -37,6 +37,18 @@ function Δ(f)
         Δf[x,y] = f[x-1,y] + f[x+1,y] + f[x,y-1] + f[x,y+1] - 4f[x,y]
     end
     return Δf
+end
+
+function pool(A, a)
+    B = zero(A)
+    for y = 2:size(A,2)-1
+        for x = 2:size(A,1)-1
+            if maximum(abs, A[x-1:x+1, y-1:y+1] .- A[x, y]) > a
+                B[x,y] = 0.5
+            end
+        end
+    end
+    return B
 end
 
 threshold(x, a) = x > a ? 0.5 : 0.0
@@ -58,6 +70,10 @@ end
 fig1 = plot_matrix(mod.(iteration_matrix(0.25, 3.0, 3000), 1.0));
 save(joinpath("plots", "continuous.png"), fig1)
 
-levels = threshold.(mod.(Δ(iteration_matrix(0.25, 3.0, 3000)), 1.0), 0.001);
-fig2 = plot_matrix(levels);
+levels1 = threshold.(mod.(Δ(iteration_matrix(0.25, 3.0, 3000)), 1.0), 0.001);
+fig2 = plot_matrix(levels1);
 save(joinpath("plots", "laplacian.png"), fig2)
+
+levels2 = pool(iteration_matrix(0.25, 3.0, 3000), 0.05);
+fig3 = plot_matrix(levels2);
+save(joinpath("plots", "pooling.png"), fig3)
