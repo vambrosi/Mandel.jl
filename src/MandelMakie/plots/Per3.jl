@@ -88,7 +88,7 @@ function mask(A, t1, t2, t3, b, keep, all)
     B = zero(A)
     for y in 2:size(A, 2)-1
         for x in 2:size(A, 1)-1
-            C = A[x-1:x+1, y-1:y+1] .- A[x, y]
+            C = A[x-1:x+1, y-1:y+1]
 
             check =
                 all ? (t1 ∈ C && t2 ∈ C && t3 ∈ C) :
@@ -137,10 +137,14 @@ levels5 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, true, false);
 fig5 = plot_matrix(levels5);
 save(joinpath("plots", "preperiod_mod3_border_at_least_2.png"), fig5)
 
-levels6 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, false, false);
+levels6 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, true, true);
 fig6 = plot_matrix(levels6);
-save(joinpath("plots", "preperiod_mod3_only_border_at_least_2.png"), fig6)
+save(joinpath("plots", "preperiod_mod3_border_all_3.png"), fig6)
 
-levels7 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, false, true);
+levels7 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, false, false);
 fig7 = plot_matrix(levels7);
-save(joinpath("plots", "preperiod_mod3_only_border_all_3.png"), fig7)
+save(joinpath("plots", "preperiod_mod3_only_border_at_least_2.png"), fig7)
+
+levels8 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, false, true);
+fig8 = plot_matrix(levels8);
+save(joinpath("plots", "preperiod_mod3_only_border_all_3.png"), fig8)
