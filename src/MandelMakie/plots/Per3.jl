@@ -63,19 +63,19 @@ function mod_matrix(center, radius, pixels)
 end
 
 function Δ(f)
-    Δf = zero(f) 
-    for y = 2:size(f,2)-1, x = 2:size(f,1)-1
-        Δf[x,y] = f[x-1,y] + f[x+1,y] + f[x,y-1] + f[x,y+1] - 4f[x,y]
+    Δf = zero(f)
+    for y in 2:size(f, 2)-1, x in 2:size(f, 1)-1
+        Δf[x, y] = f[x-1, y] + f[x+1, y] + f[x, y-1] + f[x, y+1] - 4f[x, y]
     end
     return Δf
 end
 
 function pool(A, a)
     B = zero(A)
-    for y = 2:size(A,2)-1
-        for x = 2:size(A,1)-1
+    for y in 2:size(A, 2)-1
+        for x in 2:size(A, 1)-1
             if maximum(abs, A[x-1:x+1, y-1:y+1] .- A[x, y]) > a
-                B[x,y] = 0.5
+                B[x, y] = 0.5
             end
         end
     end
@@ -84,11 +84,31 @@ end
 
 threshold(x, a) = x > a ? 0.5 : 0.0
 
+function mask(A, t1, t2, t3, b, keep, all)
+    B = zero(A)
+    for y in 2:size(A, 2)-1
+        for x in 2:size(A, 1)-1
+            C = A[x-1:x+1, y-1:y+1] .- A[x, y]
+
+            check =
+                all ? (t1 ∈ C && t2 ∈ C && t3 ∈ C) :
+                (t1 ∈ C && t2 ∈ C) || (t2 ∈ C && t3 ∈ C) || (t1 ∈ C && t3 ∈ C)
+            
+            if check
+                B[x, y] = b
+            else
+                B[x, y] = keep ? A[x, y] : 0.0
+            end
+        end
+    end
+    return B
+end
+
 function plot_matrix(m)
     d = size(m, 1)
 
     fig = Figure(size = (d, d))
-    ax = Axis(fig[1,1], aspect = AxisAspect(1))
+    ax = Axis(fig[1, 1], aspect = AxisAspect(1))
 
     heatmap!(ax, m, colormap = :twilight, colorrange = (0.0, 1.0))
 
@@ -111,3 +131,16 @@ save(joinpath("plots", "pooling.png"), fig3)
 
 fig4 = plot_matrix(mod_matrix(0.25, 3.0, 3000));
 save(joinpath("plots", "preperiod_mod3.png"), fig4)
+
+test_levels = [i * 0.5 / 3 for i in 0:2]
+levels5 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, true, false);
+fig5 = plot_matrix(levels5);
+save(joinpath("plots", "preperiod_mod3_border_at_least_2.png"), fig5)
+
+levels6 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, false, false);
+fig6 = plot_matrix(levels6);
+save(joinpath("plots", "preperiod_mod3_only_border_at_least_2.png"), fig6)
+
+levels7 = mask(mod_matrix(0.25, 3.0, 3000), test_levels..., 0.75, false, true);
+fig7 = plot_matrix(levels7);
+save(joinpath("plots", "preperiod_mod3_only_border_all_3.png"), fig7)
