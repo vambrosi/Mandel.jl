@@ -14,6 +14,20 @@ function height(c, R, N)
     return NaN
 end
 
+function mod_iterate(c, R, N)
+    z = 0
+
+    for i in 1:N
+        if abs(z) > R
+            return mod(i, 3) * 0.5 / 3
+        end
+
+        z = (z^2 - 1 - c + c^3) / (z^2 - c^2)
+    end
+
+    return 0.5
+end
+
 function iteration_matrix(center, radius, pixels)
     pixel_length = 2 * radius / pixels
     corner = center - (radius + pixel_length / 2) * complex(1, 1)
@@ -23,6 +37,23 @@ function iteration_matrix(center, radius, pixels)
         for i in 1:pixels
             c = corner + pixel_length * complex(i, j)
             heights[i, j] = height(c, 1000.0, 1000) / 20.0
+
+            isfinite(heights[i, j]) || (heights[i, j] = 0.5)
+        end
+    end
+
+    return heights
+end
+
+function mod_matrix(center, radius, pixels)
+    pixel_length = 2 * radius / pixels
+    corner = center - (radius + pixel_length / 2) * complex(1, 1)
+
+    heights = Matrix{Float64}(undef, pixels, pixels)
+    for j in 1:pixels
+        for i in 1:pixels
+            c = corner + pixel_length * complex(i, j)
+            heights[i, j] = mod_iterate(c, 1000.0, 1000)
 
             isfinite(heights[i, j]) || (heights[i, j] = 0.5)
         end
@@ -77,3 +108,6 @@ save(joinpath("plots", "laplacian.png"), fig2)
 levels2 = pool(iteration_matrix(0.25, 3.0, 3000), 0.05);
 fig3 = plot_matrix(levels2);
 save(joinpath("plots", "pooling.png"), fig3)
+
+fig4 = plot_matrix(mod_matrix(0.25, 3.0, 3000));
+save(joinpath("plots", "preperiod_mod3.png"), fig4)
