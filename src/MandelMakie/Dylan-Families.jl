@@ -21,6 +21,7 @@ begin
     Julia3D = MandelMakie.Julia3D
     Fatou3D = MandelMakie.Fatou3D
     set_parameter! = MandelMakie.set_parameter!
+    get_attractors = MandelMakie.get_attractors
 end
 
 # ╔═╡ 1ba72fef-d5c4-4da4-9c17-4ba0096bf968
@@ -67,6 +68,18 @@ p2(z, c) = (z^2 - c) / (z^2 - 1)
 Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0)
   ╠═╡ =#
 
+# ╔═╡ ac6a0d56-8990-45a8-90e0-4b876024c1c1
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer(
+	p2,
+	mandel_center = -0.5,
+	mandel_diameter = 6.0,
+	julia_diameter = 6.0,
+	coloring_method=:mod_period
+)
+  ╠═╡ =#
+
 # ╔═╡ 130ce106-d086-4c4e-af9d-9369208e2562
 # ╠═╡ disabled = true
 #=╠═╡
@@ -102,6 +115,12 @@ per3(z, c) = (z^2 - 1 - c + c^3) / (z^2 - c^2)
 # ╠═╡ disabled = true
 #=╠═╡
 Viewer(per3, mandel_diameter = 6.0)
+  ╠═╡ =#
+
+# ╔═╡ 744228c4-23f4-409a-805a-faa672e6fa9b
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer(per3, mandel_diameter = 6.0, coloring_method=:mod_period)
   ╠═╡ =#
 
 # ╔═╡ ef15c50e-4158-4716-994b-c8885d9f81af
@@ -143,7 +162,23 @@ Viewer(per4, crit = per4crit)
 # ╔═╡ 2962904d-2c4d-4fe7-9c59-f735ab953bfa
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(per4, crit = per4crit, convergence_criterion=:near_attractor)
+Viewer(
+	per4,
+	crit = per4crit,
+	coloring_method=:convergence_time,
+	projective_metric=true
+)
+  ╠═╡ =#
+
+# ╔═╡ 43af11b5-9593-4950-b853-8fa8869e6ace
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer(
+	per4,
+	crit = per4crit,
+	coloring_method=:mod_period,
+	projective_metric=true
+)
   ╠═╡ =#
 
 # ╔═╡ 9f9585b3-011c-4ae9-b5ce-069ecef3a23e
@@ -184,6 +219,7 @@ md"""
 # ╟─63627492-a386-4137-ad07-05b687df03c5
 # ╠═dc859310-0b21-4ede-a740-2b285f52a3df
 # ╠═8848c897-3fb7-4a7d-aa5f-d6b34438decb
+# ╠═ac6a0d56-8990-45a8-90e0-4b876024c1c1
 # ╠═130ce106-d086-4c4e-af9d-9369208e2562
 # ╟─79cbbb8b-8add-4d95-87f2-a9d825494636
 # ╠═fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
@@ -192,6 +228,7 @@ md"""
 # ╟─fa18fc4e-c7a7-4268-ab77-368a277d2ae6
 # ╠═363f547e-715c-4b5e-b657-5c41f8e674ca
 # ╠═dd5a428d-c4af-4121-8905-902ca0ec1310
+# ╠═744228c4-23f4-409a-805a-faa672e6fa9b
 # ╠═ef15c50e-4158-4716-994b-c8885d9f81af
 # ╟─a9c743b4-7214-4b4d-b229-39aea38215bb
 # ╟─b72a25ca-92a4-4950-88a9-e027335fbe9a
@@ -199,6 +236,7 @@ md"""
 # ╠═bea223da-13a5-4662-9e1f-ed6b27cf6d54
 # ╠═b4481ee2-42d9-437f-b452-7632c52afbd0
 # ╠═2962904d-2c4d-4fe7-9c59-f735ab953bfa
+# ╠═43af11b5-9593-4950-b853-8fa8869e6ace
 # ╟─9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
 # ╠═1991d152-f45b-4b00-ab29-32f6d80c8997
