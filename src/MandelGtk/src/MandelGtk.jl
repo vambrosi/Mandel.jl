@@ -29,13 +29,19 @@ end
 function to_complex_plane(box, height, width, x, y)
     upp = box.diameter / min(height, width)
 
-    a = (x + 0.5 - width / 2) * upp
-    b = -(y + 0.5 - height / 2) * upp
+    a = (x + 1 - width / 2) * upp
+    b = -(y + 2 - height / 2) * upp
 
     return box.center + complex(a, b)
 end
 
-function on_release(controller, n_press, x, y, view, f)
+@guarded function on_press(controller, n_press, x, y, view)
+    view.pressed = true
+    view.dragstart = [x, y]
+    return
+end
+
+@guarded function on_release(controller, n_press, x, y, view, f)
     view.pressed || return
     view.pressed = false
 
@@ -60,7 +66,7 @@ function on_release(controller, n_press, x, y, view, f)
     return
 end
 
-function on_motion(controller, x, y, view)
+@guarded function on_motion(controller, x, y, view)
     view.pointer = [x, y]
     view.pressed || return
 
@@ -109,11 +115,11 @@ function zoom!(view, canvas, ctx, f, h, w, pointer)
     return nothing
 end
 
-function on_zoom(controller, Δx, Δy, view, f)
+@guarded function on_zoom(controller, Δx, Δy, view, f)
     view.pressed && return
     view.zooming = true
 
-    view.scale += Δy * -0.05
+    view.scale *= Δy < 0 ? 1.1 : 0.9
     view.scale = min(max(0.02, view.scale), 50)
 
     pointer = deepcopy(view.pointer)
@@ -209,8 +215,6 @@ end
 struct Viewer
     window::GtkWindow
     canvas::GtkCanvas
-    events::Dict{Symbol,Any}
-    signals::Dict{Symbol,Any}
 end
 
 function viewer(f::Function, c::Number, is_mandel::Bool)
@@ -257,25 +261,23 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
     end
 
     mouse_left = GtkGestureClick(canvas)
-    signal_p = signal_connect(mouse_left, "pressed") do controller, n_press, x, y
-        view.pressed = true
-        view.dragstart = [x, y]
-        return
+    signal_connect(mouse_left, "pressed") do args...
+        on_press(args..., view)
     end
 
-    signal_r = signal_connect(mouse_left, "released") do args...
+    signal_connect(mouse_left, "released") do args...
         on_release(args..., view, f)
     end
 
     mouse_motion = GtkEventControllerMotion(canvas)
-    signal_m = signal_connect(mouse_motion, "motion") do args...
+    signal_connect(mouse_motion, "motion") do args...
         on_motion(args..., view)
     end
 
     mouse_scroll =
         GtkEventControllerScroll(Gtk4.EventControllerScrollFlags_VERTICAL, canvas)
 
-    signal_s = signal_connect(mouse_scroll, "scroll") do args...
+    signal_connect(mouse_scroll, "scroll") do args...
         on_zoom(args..., view, f)
     end
 
@@ -288,23 +290,7 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
         @async Gtk4.GLib.glib_main()
     end
 
-    viewer = Viewer(
-        win,
-        canvas,
-        Dict(
-            :left => mouse_left,
-            :move => mouse_motion,
-            :scroll => mouse_scroll,
-        ),
-        Dict(
-            :press => signal_p,
-            :release => signal_r,
-            :move => signal_m,
-            :scroll => signal_s,
-        ),
-    )
-
-    return viewer
+    return Viewer(win, canvas)
 end
 
 end
