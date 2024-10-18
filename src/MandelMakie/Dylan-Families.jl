@@ -44,7 +44,19 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(q, mandel_center = -0.5)
+Viewer(q, mandel_center = -0.5,convergence_criterion=:near_attractor)
+  ╠═╡ =#
+
+# ╔═╡ 3556d294-8f27-4c1c-8568-d2c548869e79
+# ╠═╡ disabled = true
+#=╠═╡
+v = Viewer((z,λ) -> z^2 + λ*z, crit=λ -> -λ/2, convergence_criterion=:near_attractor)
+  ╠═╡ =#
+
+# ╔═╡ 781ae5e9-545e-4c6b-9285-86f01a91e8ff
+# ╠═╡ disabled = true
+#=╠═╡
+MandelMakie.get_attractors(v)
   ╠═╡ =#
 
 # ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
@@ -64,7 +76,12 @@ p2(z, c) = (z^2 - c) / (z^2 - 1)
 # ╔═╡ 8848c897-3fb7-4a7d-aa5f-d6b34438decb
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0)
+v = Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0, convergence_criterion=:near_attractor)
+  ╠═╡ =#
+
+# ╔═╡ d04798ec-c7c7-4868-b761-f9bb65e9a269
+#=╠═╡
+MandelMakie.get_attractors(v)
   ╠═╡ =#
 
 # ╔═╡ 130ce106-d086-4c4e-af9d-9369208e2562
@@ -99,10 +116,7 @@ md"""
 per3(z, c) = (z^2 - 1 - c + c^3) / (z^2 - c^2)
 
 # ╔═╡ dd5a428d-c4af-4121-8905-902ca0ec1310
-# ╠═╡ disabled = true
-#=╠═╡
 Viewer(per3, mandel_diameter = 6.0)
-  ╠═╡ =#
 
 # ╔═╡ ef15c50e-4158-4716-994b-c8885d9f81af
 # ╠═╡ disabled = true
@@ -117,11 +131,11 @@ md"""
 
 # ╔═╡ b72a25ca-92a4-4950-88a9-e027335fbe9a
 md"""
-This is the parametrization from Milnor's 93 paper *Quadratic Rational Maps*. The fixed cycle is
+This is the parametrization from Milnor's 93 paper *Quadratic Rational Maps*. The marked cycle is
 ```math
 0 \overset{2}{\longmapsto} \infty \longmapsto 1 \longmapsto \rho \longmapsto 0
 ```
-and the free critical point is at
+and the free (active) critical point is at
 ```math
 c = \frac{4\rho^2-2\rho}{-1+\rho+\rho^2}.
 ```
@@ -133,12 +147,6 @@ per4(z, ρ) = (z - ρ) * (z - (2ρ - 1) / (ρ - 1)) / z^2
 
 # ╔═╡ bea223da-13a5-4662-9e1f-ed6b27cf6d54
 per4crit(ρ) = (4ρ^2 - 2ρ) / (-1 + ρ + ρ^2)
-
-# ╔═╡ b4481ee2-42d9-437f-b452-7632c52afbd0
-# ╠═╡ disabled = true
-#=╠═╡
-Viewer(per4, crit = per4crit)
-  ╠═╡ =#
 
 # ╔═╡ 2962904d-2c4d-4fe7-9c59-f735ab953bfa
 # ╠═╡ disabled = true
@@ -180,10 +188,13 @@ md"""
 # ╠═f49a6cef-86c9-4a47-a9ff-30588b3de27c
 # ╟─6b1c8547-06de-4bb7-9062-0826ad04b92e
 # ╠═70f82c8f-5b1b-46c7-87b3-5fad91ba1094
+# ╠═3556d294-8f27-4c1c-8568-d2c548869e79
+# ╠═781ae5e9-545e-4c6b-9285-86f01a91e8ff
 # ╠═5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
 # ╟─63627492-a386-4137-ad07-05b687df03c5
 # ╠═dc859310-0b21-4ede-a740-2b285f52a3df
 # ╠═8848c897-3fb7-4a7d-aa5f-d6b34438decb
+# ╠═d04798ec-c7c7-4868-b761-f9bb65e9a269
 # ╠═130ce106-d086-4c4e-af9d-9369208e2562
 # ╟─79cbbb8b-8add-4d95-87f2-a9d825494636
 # ╠═fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
@@ -197,7 +208,6 @@ md"""
 # ╟─b72a25ca-92a4-4950-88a9-e027335fbe9a
 # ╠═93eb1b62-e7ca-4969-8a1e-5902d509b8a4
 # ╠═bea223da-13a5-4662-9e1f-ed6b27cf6d54
-# ╠═b4481ee2-42d9-437f-b452-7632c52afbd0
 # ╠═2962904d-2c4d-4fe7-9c59-f735ab953bfa
 # ╟─9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
