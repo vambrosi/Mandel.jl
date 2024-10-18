@@ -10,7 +10,7 @@ begin
     # It will install the necessary packages the first time it runs.
     using Pkg
     Pkg.activate(Base.current_project())
-	  Pkg.instantiate()
+    Pkg.instantiate()
 
     # Includes the file with definitions and imports the relevant modules
     include("./src/MandelMakie.jl")
@@ -96,7 +96,7 @@ To get more details about the `Viewer` function just type `?Viewer` in an empty 
 # ╔═╡ 9ce5fbe4-2985-4665-8a30-682d93ac52ba
 # ╠═╡ disabled = true
 #=╠═╡
-viewer = Viewer(g; crit=1/3, convergence_criterion=:near_attractor)
+viewer = Viewer(g; crit=1/3, coloring_method=:convergence_time)
   ╠═╡ =#
 
 # ╔═╡ 64508179-e449-4d9a-b669-a08cfd5b6df1

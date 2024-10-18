@@ -318,17 +318,17 @@ distance(cycle1::Vector{T}, cycle2::Vector{T}) where {T<:PointLike} =
 
 function is_nearby(z::T, w::T, ε::Real) where {T<:PointLike}
     d = distance(z, w)
-    d < ε ? (return true, d) : (return false, ε)
+    return d < ε ? (true, d, 1) : (false, ε, 0)
 end
 
 function is_nearby(z::T, cycle::Vector{T}, ε::Real) where {T<:PointLike}
-    for w in cycle
+    for (i, w) in enumerate(cycle)
         d = distance(z, w)
         if d < ε
-            return true, d
+            return true, d, i
         end
     end
-    return false, ε
+    return false, ε, 0
 end
 
 function convergence_time(
@@ -341,14 +341,14 @@ function convergence_time(
 ) where {T<:PointLike}
     for iteration in 0:max_iterations
         for attractor in attractors
-            near, d = is_nearby(z, attractor.cycle, ε)
-            near && (return iteration, d, attractor)
+            near, d, shift = is_nearby(z, attractor.cycle, ε)
+            near && (return iteration, d, attractor, shift)
         end
 
         z = f(z, c)
     end
 
-    return max_iterations + 1, ε, empty_attractor
+    return max_iterations + 1, ε, empty_attractor, 0
 end
 
 struct CloseBy
@@ -431,7 +431,7 @@ function attractor_index(z, julia, d_system, options)
 
     while attractor_index == 0 && iterations <= N
         for (i, attractor) in enumerate(attractors)
-            near, _ = is_nearby(z, attractor.cycle, ε)
+            near, _, _ = is_nearby(z, attractor.cycle, ε)
             near && (attractor_index = i)
         end
 
@@ -500,6 +500,52 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
     end
 
     return orbit
+end
+
+function get_attractor(f::Function, z::Number; projective::Bool = false, ε::Real = 1e-4)
+    hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
+
+    h = extend_family((z, c) -> f(z))
+
+    return get_attractor(h, 0.0im, z; projective = projective, ε = ε)
+end
+
+function get_attractor(
+    f::Function,
+    c::Number,
+    z::Number;
+    projective::Bool = false,
+    ε::Real = 1e-4,
+)
+    # If it is not a family ignores the parameter
+    hasmethod(f, Tuple{ComplexF64,ComplexF64}) ||
+        return get_attractors(f, projective = projective, ε = ε)
+
+    c = convert(ComplexF64, c)
+    z = convert(ComplexF64, z)
+
+    # Extend the function, in case it was not extended previously
+    g = extend_family(f)
+
+    # Iterate critical points to find all attracting cycles
+    crit_pts = critical_points(g, c)
+    unique_crit_pts = [(z, count(w -> isapprox(z, w), crit_pts)) for z in unique(crit_pts)]
+
+    pt = convert(Point, z)
+    orbit = attracting_cycle(g, pt, c, ε / 2, 1000)
+    power = 1
+
+    for (crit_z, multiplicity) in unique_crit_pts
+        pt = convert(Point, crit_z)
+        power *= is_nearby(pt, orbit, ε / 2)[1] ? (multiplicity + 1) : 1
+    end
+
+    plane_orbit = convert(Vector{ComplexF64}, orbit)
+    multiplier = abs(g(plane_orbit, c))
+
+    projective || (orbit = plane_orbit)
+
+    return Attractor(orbit, multiplier, power, 1, 1)
 end
 
 """
@@ -572,14 +618,22 @@ end
 const DEFAULT_COLOR_LEVEL = 0.5
 const DEFAULT_COLOR = twilight_RGB[255]
 
+to_color(::Nothing) = DEFAULT_COLOR
+
 function to_color(approach::OrbitData)
     depth = mod(approach.preperiod / approach.period / 64.0, 1.0)
     return twilight_RGB[round(Int, 509 * depth + 1)]
 end
 
-to_color(::Integer, ::Number, ::Nothing) = DEFAULT_COLOR
+to_color(::Integer, ::Number, ::Nothing, ::Integer, ::Val{T}) where {T} = DEFAULT_COLOR
 
-function to_color(iterations::Integer, d::Number, attractor::Attractor)
+function to_color(
+    iterations::Integer,
+    d::Number,
+    attractor::Attractor,
+    shift::Integer,
+    ::Val{:depth},
+)
     d = max(d, 0)
     depth = iterations / attractor.period
 
@@ -599,9 +653,23 @@ function to_color(iterations::Integer, d::Number, attractor::Attractor)
     return attractor.palette[127*mod(round(Int, depth), 4)+95]
 end
 
-to_color(::Nothing) = DEFAULT_COLOR
+function to_color(
+    iterations::Integer,
+    d::Number,
+    attractor::Attractor,
+    shift::Integer,
+    ::Val{:mod},
+)
+    d = max(d, 0)
 
-escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)...)
+    spacing = 255 / attractor.period
+    depth = mod(iterations - shift, attractor.period) * spacing + 1
+
+    return attractor.palette[floor(Int, depth)]
+end
+
+escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:depth))
+mod_period(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:mod))
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
 
 struct ColoringData{T}
@@ -678,7 +746,7 @@ mutable struct Options
     compact_view::Bool
     is_family::Bool
     projective_metrics::Tuple{Bool,Bool}
-    convergence_criteria::Tuple{Symbol,Symbol}
+    coloring_methods::Tuple{Symbol,Symbol}
     coloring_schemes::Vector{ColoringScheme}
 end
 
@@ -1184,7 +1252,7 @@ function add_frame_events!(
 
                 elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
                        view == julia &&
-                       options.convergence_criteria[2] != :almost_periodic
+                       options.coloring_methods[2] != :preperiod
                     z = to_complex_plane(julia, mouseposition(scene))
                     i = attractor_index(z, julia, d_system, options)
 
@@ -1247,7 +1315,7 @@ function add_frame_events!(
 
         if ispressed(scene, Keyboard.c) &&
            view == julia &&
-           options.convergence_criteria[2] != :almost_periodic
+           options.coloring_methods[2] != :preperiod
             if is_mouseinside(axis) &&
                !is_zooming &&
                (is_topframe || !is_mouseinside(topframe.axis))
@@ -1399,31 +1467,36 @@ make_tuple(x::Tuple) = x
 
 function fix_criteria((mandel, julia))
     # Test if it is one of the valid options
-    options = [:escape_time, :near_attractor, :almost_periodic]
+    options = [:escape_time, :convergence_time, :mod_period, :preperiod]
     mandel in options || throw("Invalid Mandelbrot set coloring method")
     julia in options || throw("Invalid Julia set coloring method")
 
     # Mandelbrot can't use attractors so change to default
-    mandel == :near_attractor && (mandel = :almost_periodic)
+    mandel == :convergence_time && (mandel = :preperiod)
+    mandel == :mod_period && (mandel = :preperiod)
     return mandel, julia
 end
 
-function get_coloring_data(map, c, convergence_criterion, projective_metric)
-    if convergence_criterion == :near_attractor
+function get_coloring_data(map, c, coloring_method, projective_metric)
+    if coloring_method == :escape_time
+        method = escape_time
+        a = get_attractor(map, c + 100, ∞, projective = projective_metric)
+        attractors = [a]
+        update_attractors = false
+    elseif coloring_method == :convergence_time
         method = escape_time
         attractors = get_attractors(map, c, projective = projective_metric)
         update_attractors = true
-    elseif convergence_criterion == :escape_time
-        method = escape_time
-        attractors =
-            projective_metric ? [Attractor(Point(1, 0), 0, 2)] : [Attractor(∞, 0, 2)]
-        update_attractors = false
-    elseif convergence_criterion == :almost_periodic
+    elseif coloring_method == :mod_period
+        method = mod_period
+        attractors = get_attractors(map, c, projective = projective_metric)
+        update_attractors = true
+    elseif coloring_method == :preperiod
         method = convergence_color
         attractors = Attractor{attractor_type(projective_metric)}[]
         update_attractors = false
     else
-        throw("Invalid `convergence_criterion`")
+        throw("Invalid `coloring_method`")
     end
 
     return ColoringData(method, attractors, update_attractors)
@@ -1506,22 +1579,25 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
 For the options below, if you want to set different values for the Mandelbrot and Julia \
 set views, set the option to be a tuple with the respective values.
 
-  - `convergence_criterion = :escape_time`: Chooses the coloring method for both plots. \
-    The options are `:escape_time`, `:near_attractor`, `:almost_periodic`. More details \
-    below.
+  - `coloring_method = :escape_time`: Chooses the coloring method for both plots. \
+    The options are `:escape_time`, `:convergence_time`, `:mod_period`, `:preperiod`. \
+    More details below.
   - `projective_metric = false`: Determines which metric will be used to determine \
     distances, the complex plane metric, or the metric on the projective line. The \
     distance between ∞ and a finite point in the plane metric is the inverse of its absolute value.
 
-# Convergence Criteria
+# Coloring Methods
 
-  - `:escape_time` (default): computes how fast a point approaches ∞;
-  - `:almost_periodic`: finds the attracting cycle for each point separately using \
-    Floyd's cycle-finding algorithm;
-  - `:near_attractor`: computes all attracting cycles in advance, and then computes how \
+  - `:escape_time` (default): colors according how fast the point approaches ∞;
+  - `:convergence_time`: computes all attracting cycles in advance, and then computes how \
     fast each point converges to one of those attractors (uses different color gradients \
     for each attractor). This option is only available for the Julia set, and it will \
-    default to `:almost_periodic` in the Mandelbrot set case.
+    default to `:preperiod` in the Mandelbrot set case.
+  - `:mod_period`: similar to `:convergence_time` but instead of using the `preperiod` \
+    (i.e. how fast it converges to attractor) as the "color depth" it uses \
+    `mod(preperiod, period)`.
+  - `:preperiod`: finds the attracting cycle for each point separately using \
+    Floyd's cycle-finding algorithm and uses `preperiod / period` as "color depth";
 """
 struct Viewer
     d_system::DynamicalSystem
@@ -1545,12 +1621,12 @@ struct Viewer
         julia_diameter = 4.0,
         compact_view = true,
         grid_width = 800,
-        convergence_criterion = :escape_time,
+        coloring_method = :escape_time,
         projective_metric = false,
     )
         # Put options in standard form
         projective_metrics = make_tuple(projective_metric)
-        convergence_criteria = fix_criteria(make_tuple(convergence_criterion))
+        coloring_methods = fix_criteria(make_tuple(coloring_method))
 
         # Check if it is a family of maps
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
@@ -1565,23 +1641,15 @@ struct Viewer
             compact_view,
             is_family,
             projective_metrics,
-            convergence_criteria,
+            coloring_methods,
             ColoringScheme[],
         )
         figure = Figure(size = (800, 850))
 
-        mandel_coloring = get_coloring_data(
-            d_system.map,
-            c,
-            convergence_criteria[1],
-            projective_metrics[1],
-        )
-        julia_coloring = get_coloring_data(
-            d_system.map,
-            c,
-            convergence_criteria[2],
-            projective_metrics[2],
-        )
+        mandel_coloring =
+            get_coloring_data(d_system.map, c, coloring_methods[1], projective_metrics[1])
+        julia_coloring =
+            get_coloring_data(d_system.map, c, coloring_methods[2], projective_metrics[2])
 
         mandel =
             !is_family ? nothing :
