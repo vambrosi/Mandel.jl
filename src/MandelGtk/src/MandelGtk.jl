@@ -26,13 +26,13 @@ function color(iterations::Integer, r::Real)
     return twilight_RGB24[index]
 end
 
-function to_complex_plane(box, height, width, x, y)
-    upp = box.diameter / min(height, width)
+function to_complex_plane(roi, height, width, x, y)
+    upp = roi.diameter / min(height, width)
 
-    a = (x + 1 - width / 2) * upp
-    b = -(y + 2 - height / 2) * upp
+    a = (x - width / 2) * upp
+    b = -(y + 0.5 - height / 2) * upp
 
-    return box.center + complex(a, b)
+    return roi.center + complex(a, b)
 end
 
 @guarded function on_press(controller, n_press, x, y, view)
@@ -51,11 +51,11 @@ end
     h = height(canvas)
     w = width(canvas)
 
-    z1 = to_complex_plane(view.box, h, w, view.dragstart...)
-    z2 = to_complex_plane(view.box, h, w, x, y)
+    z1 = to_complex_plane(view.roi, h, w, view.dragstart...)
+    z2 = to_complex_plane(view.roi, h, w, x, y)
 
-    view.box.center += z1 - z2
-    plt = plot(view.box, f, w, h)
+    view.roi.center += z1 - z2
+    plt = plot(view.roi, f, w, h)
 
     surface = CairoImageSurface(plt)
     set_source_surface(ctx, surface)
@@ -66,15 +66,18 @@ end
     return
 end
 
-@guarded function on_motion(controller, x, y, view)
+@guarded function on_motion(controller, x, y, view, coord)
     view.pointer = [x, y]
-    view.pressed || return
 
     canvas = widget(controller)
     ctx = getgc(canvas)
 
     h = height(canvas)
     w = width(canvas)
+
+    coord.label = string(to_complex_plane(view.roi, h, w, x, y))
+
+    view.pressed || return
 
     set_source_rgb(ctx, 1, 1, 1)
     rectangle(ctx, 0, 0, w, h)
@@ -93,22 +96,22 @@ end
 end
 
 function zoom!(view, canvas, ctx, f, h, w, pointer)
-    box = deepcopy(view.box)
+    roi = deepcopy(view.roi)
 
     inv_scale = 1 / view.scale
-    z = to_complex_plane(box, h, w, view.pointer...)
+    z = to_complex_plane(roi, h, w, view.pointer...)
 
-    box.diameter *= inv_scale
-    box.center = inv_scale * box.center + (1 - inv_scale) * z
+    roi.diameter *= inv_scale
+    roi.center = inv_scale * roi.center + (1 - inv_scale) * z
 
-    plt = plot(box, f, w, h)
+    plt = plot(roi, f, w, h)
 
     surface = CairoImageSurface(plt)
     set_source_surface(ctx, surface, 0, 0)
     paint(ctx)
     reveal(canvas)
 
-    view.box = box
+    view.roi = roi
     view.scale = 1.0
     view.plot = plt
 
@@ -151,37 +154,17 @@ end
     return
 end
 
-mutable struct MandelBox
+mutable struct MandelROI
     center::ComplexF64
     diameter::Float64
 end
 
-mutable struct JuliaBox
-    center::ComplexF64
-    diameter::Float64
-    parameter::ComplexF64
-end
-
-mutable struct View
-    box::Union{MandelBox,JuliaBox}
-    plot::Matrix{RGB24}
-
-    pressed::Bool
-    zooming::Bool
-
-    dragstart::Vector{Float64}
-    pointer::Vector{Float64}
-    scale::Float64
-
-    zoom_timer::Timer
-end
-
-function plot(mandel::MandelBox, f::Function, w::Integer, h::Integer)
+function plot(mandel::MandelROI, f::Function, w::Integer, h::Integer)
     plt = Matrix{RGB24}(undef, w, h)
     futures = Vector{Task}(undef, h)
 
     upp = mandel.diameter / min(h, w)
-    corner = mandel.center + upp * complex(0.5 - w / 2, -0.5 + h / 2)
+    corner = mandel.center + upp * complex(-0.5 - w / 2, 1.0 + h / 2)
 
     for j in 1:h
         futures[j] = Threads.@spawn for i in 1:w
@@ -194,12 +177,18 @@ function plot(mandel::MandelBox, f::Function, w::Integer, h::Integer)
     return plt
 end
 
-function plot(julia::JuliaBox, f::Function, w::Integer, h::Integer)
+mutable struct JuliaROI
+    center::ComplexF64
+    diameter::Float64
+    parameter::ComplexF64
+end
+
+function plot(julia::JuliaROI, f::Function, w::Integer, h::Integer)
     plt = Matrix{RGB24}(undef, w, h)
     futures = Vector{Task}(undef, h)
 
     upp = julia.diameter / min(h, w)
-    corner = julia.center + upp * complex(0.5 - w / 2, -0.5 + h / 2)
+    corner = julia.center + upp * complex(-0.5 - w / 2, 1.0 + h / 2)
 
     for j in 1:h
         futures[j] = Threads.@spawn for i in 1:w
@@ -212,21 +201,24 @@ function plot(julia::JuliaBox, f::Function, w::Integer, h::Integer)
     return plt
 end
 
-struct Viewer
-    window::GtkWindow
-    canvas::GtkCanvas
+const ROI = Union{MandelROI, JuliaROI}
+
+mutable struct View
+    roi::ROI
+    plot::Matrix{RGB24}
+
+    pressed::Bool
+    zooming::Bool
+
+    dragstart::Vector{Float64}
+    pointer::Vector{Float64}
+    scale::Float64
+
+    zoom_timer::Timer
 end
 
-function viewer(f::Function, c::Number, is_mandel::Bool)
-    win = GtkWindow("Mandel", 500, 500, true, false)
-    vbox = GtkBox(:v)
-    push!(win, vbox)
-
-    canvas = GtkCanvas()
-    canvas.vexpand = canvas.hexpand = true
-    push!(vbox, canvas)
-
-    plt = Matrix{RGB24}(undef, 500, 500)
+function View(roi::ROI, w::Integer, h::Integer)
+    plt = Matrix{RGB24}(undef, w, h)
 
     pressed = false
     zooming = false
@@ -235,31 +227,11 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
     pointer = [0.0, 0.0]
     scale = 1.0
 
-    box = is_mandel ? MandelBox(-0.5, 4.0) : JuliaBox(0.0im, 4.0, c)
-    view = View(
-        box,
-        plt,
-        pressed,
-        zooming,
-        dragstart,
-        pointer,
-        scale,
-        Timer(_ -> nothing, 0.1),
-    )
+    timer = Timer(_ -> nothing, 0.1)
+    return View(roi, plt, pressed, zooming, dragstart, pointer, scale, timer)
+end
 
-    @guarded draw(canvas) do widget
-        ctx = getgc(canvas)
-        h = height(canvas)
-        w = width(canvas)
-
-        plt = plot(view.box, f, w, h)
-        surface = CairoImageSurface(plt)
-        set_source_surface(ctx, surface, 0, 0)
-        paint(ctx)
-
-        view.plot = plt
-    end
-
+function add_mouse_events(canvas, view, f, coord_label)
     mouse_left = GtkGestureClick(canvas)
     signal_connect(mouse_left, "pressed") do args...
         on_press(args..., view)
@@ -271,7 +243,7 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
 
     mouse_motion = GtkEventControllerMotion(canvas)
     signal_connect(mouse_motion, "motion") do args...
-        on_motion(args..., view)
+        on_motion(args..., view, coord_label)
     end
 
     mouse_scroll =
@@ -280,6 +252,100 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
     signal_connect(mouse_scroll, "scroll") do args...
         on_zoom(args..., view, f)
     end
+
+    return mouse_left, mouse_motion, mouse_scroll
+end
+
+function add_mouse_events(mandel_canvas, julia_canvas, mandel, julia, f, coord_label)
+    mouse_left = add_mouse_events(mandel_canvas, mandel, f, coord_label)[1]
+
+    signal_connect(mouse_left, "released") do controller, n_press, x, y
+        canvas = widget(controller)
+        h = height(canvas)
+        w = width(canvas)
+
+        julia.roi.parameter = to_complex_plane(mandel.roi, h, w, x, y)
+
+        h = height(julia_canvas)
+        w = width(julia_canvas)
+
+        ctx = getgc(julia_canvas)
+        plt = plot(julia.roi, f, w, h)
+
+        surface = CairoImageSurface(plt)
+        set_source_surface(ctx, surface, 0, 0)
+        paint(ctx)
+        reveal(julia_canvas)
+
+        julia.plot = plt
+    end
+end
+
+struct Viewer
+    window::GtkWindow
+    canvas::GtkCanvas
+    overlay::GtkOverlay
+end
+
+function viewer(f::Function, c::Number)
+    win = GtkWindow("Mandel", 500, 527, true, false)
+    vbox = GtkBox(:v)
+    push!(win, vbox)
+
+    canvas = GtkCanvas()
+    canvas.vexpand = canvas.hexpand = true
+    
+    small_canvas = GtkCanvas(125, 125)
+    small_canvas.hexpand = small_canvas.vexpand = true
+    
+    frame = GtkFrame(small_canvas)
+    frame.halign = 1
+    frame.valign = 2
+    frame.margin_start = 10
+    frame.margin_bottom = 10
+
+    overlay = GtkOverlay(canvas)
+    add_overlay(overlay, frame)
+    push!(vbox, overlay)
+
+    coord_label = GtkLabel(string(0.0im))
+    push!(vbox, coord_label)
+
+    mandel = View(MandelROI(-0.5, 4.0), 500, 500)
+    julia = View(JuliaROI(0.0, 4.0, 1.0im), 500, 500)
+
+    @guarded draw(canvas) do widget
+        ctx = getgc(widget)
+        h = height(widget)
+        w = width(widget)
+
+        d = min(h, w) ÷ 4
+        small_canvas.content_height =  d
+        small_canvas.content_width =  d
+
+        plt = plot(julia.roi, f, w, h)
+        surface = CairoImageSurface(plt)
+        set_source_surface(ctx, surface, 0, 0)
+        paint(ctx)
+
+        julia.plot = plt
+    end
+
+    @guarded draw(small_canvas) do widget
+        ctx = getgc(widget)
+        h = height(widget)
+        w = width(widget)
+
+        plt = plot(mandel.roi, f, w, h)
+        surface = CairoImageSurface(plt)
+        set_source_surface(ctx, surface, 0, 0)
+        paint(ctx)
+
+        mandel.plot = plt
+    end
+
+    add_mouse_events(canvas, julia, f, coord_label)
+    add_mouse_events(small_canvas, canvas, mandel, julia, f, coord_label)
 
     show(win)
 
@@ -290,7 +356,7 @@ function viewer(f::Function, c::Number, is_mandel::Bool)
         @async Gtk4.GLib.glib_main()
     end
 
-    return Viewer(win, canvas)
+    return Viewer(win, canvas, overlay)
 end
 
 end
