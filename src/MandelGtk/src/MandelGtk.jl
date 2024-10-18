@@ -2,9 +2,9 @@ module MandelGtk
 
 export viewer
 
-using Gtk4, Graphics, Cairo, Colors, FixedPointNumbers
-
-include("ColorSchemes.jl")
+using Gtk4, Graphics, Cairo, StaticArraysCore, LinearAlgebra
+# import Symbolics, Polynomials, Nemo
+using Colors, ColorSchemes, FixedPointNumbers
 
 function iterate(f, z, c, max_iter)
     for i in 1:max_iter
@@ -18,12 +18,11 @@ function iterate(f, z, c, max_iter)
     return nothing, abs(z)
 end
 
-color(::Nothing, ::Any) = twilight_RGB24[500]
+to_color(::Nothing, ::Any) = get(ColorSchemes.twilight, 0.5)
 
-function color(iterations::Integer, r::Real)
+function to_color(iterations::Integer, r::Real)
     height = (iterations - log(2, log(r))) / 50.0
-    index = mod1(round(Int, 999 * mod(height, 1.0)), 1000)
-    return twilight_RGB24[index]
+    return get(ColorSchemes.twilight, mod(height, 1.0))
 end
 
 function to_complex_plane(roi, height, width, x, y)
@@ -169,7 +168,7 @@ function plot(mandel::MandelROI, f::Function, w::Integer, h::Integer)
     for j in 1:h
         futures[j] = Threads.@spawn for i in 1:w
             c = corner + complex(i, -j) * upp
-            plt[i, j] = color(iterate(f, 0.0im, c, 200)...)
+            plt[i, j] = to_color(iterate(f, 0.0im, c, 200)...)
         end
     end
 
@@ -193,7 +192,7 @@ function plot(julia::JuliaROI, f::Function, w::Integer, h::Integer)
     for j in 1:h
         futures[j] = Threads.@spawn for i in 1:w
             z = corner + complex(i, -j) * upp
-            plt[i, j] = color(iterate(f, z, julia.parameter, 200)...)
+            plt[i, j] = to_color(iterate(f, z, julia.parameter, 200)...)
         end
     end
 
@@ -201,7 +200,7 @@ function plot(julia::JuliaROI, f::Function, w::Integer, h::Integer)
     return plt
 end
 
-const ROI = Union{MandelROI, JuliaROI}
+const ROI = Union{MandelROI,JuliaROI}
 
 mutable struct View
     roi::ROI
@@ -260,6 +259,9 @@ function add_mouse_events(mandel_canvas, julia_canvas, mandel, julia, f, coord_l
     mouse_left = add_mouse_events(mandel_canvas, mandel, f, coord_label)[1]
 
     signal_connect(mouse_left, "released") do controller, n_press, x, y
+        abs(mandel.dragstart[1] - x) > 5 && return
+        abs(mandel.dragstart[2] - y) > 5 && return
+
         canvas = widget(controller)
         h = height(canvas)
         w = width(canvas)
@@ -278,6 +280,7 @@ function add_mouse_events(mandel_canvas, julia_canvas, mandel, julia, f, coord_l
         reveal(julia_canvas)
 
         julia.plot = plt
+        return
     end
 end
 
@@ -287,17 +290,26 @@ struct Viewer
     overlay::GtkOverlay
 end
 
-function viewer(f::Function, c::Number)
-    win = GtkWindow("Mandel", 500, 527, true, false)
+function viewer(
+    f;
+    c = 0.0im,
+    mandel_center = 0.0im,
+    mandel_diameter = 4.0,
+    julia_center = 0.0im,
+    julia_diameter = 4.0,
+    window_width = 800,
+)
+    win = GtkWindow("Mandel", window_width, window_width + 27, true, false)
     vbox = GtkBox(:v)
     push!(win, vbox)
 
     canvas = GtkCanvas()
     canvas.vexpand = canvas.hexpand = true
-    
-    small_canvas = GtkCanvas(125, 125)
+
+    overlay_size = window_width ÷ 4
+    small_canvas = GtkCanvas(overlay_size, overlay_size)
     small_canvas.hexpand = small_canvas.vexpand = true
-    
+
     frame = GtkFrame(small_canvas)
     frame.halign = 1
     frame.valign = 2
@@ -311,8 +323,8 @@ function viewer(f::Function, c::Number)
     coord_label = GtkLabel(string(0.0im))
     push!(vbox, coord_label)
 
-    mandel = View(MandelROI(-0.5, 4.0), 500, 500)
-    julia = View(JuliaROI(0.0, 4.0, 1.0im), 500, 500)
+    mandel = View(MandelROI(mandel_center, mandel_diameter), overlay_size, overlay_size)
+    julia = View(JuliaROI(julia_center, julia_diameter, c), window_width, window_width)
 
     @guarded draw(canvas) do widget
         ctx = getgc(widget)
@@ -320,8 +332,8 @@ function viewer(f::Function, c::Number)
         w = width(widget)
 
         d = min(h, w) ÷ 4
-        small_canvas.content_height =  d
-        small_canvas.content_width =  d
+        small_canvas.content_height = d
+        small_canvas.content_width = d
 
         plt = plot(julia.roi, f, w, h)
         surface = CairoImageSurface(plt)
