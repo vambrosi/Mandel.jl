@@ -98,23 +98,6 @@ Viewer(
 Viewer3D(p2)
   ╠═╡ =#
 
-# ╔═╡ 79cbbb8b-8add-4d95-87f2-a9d825494636
-md"""
-## The Devaney (2,2) family
-"""
-
-# ╔═╡ fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
-devaney22(z, λ) = z^2 + λ / z^2
-
-# ╔═╡ 36714bb2-3622-47eb-a7b5-f4c99145bd59
-devaneycrit(λ) = λ^(1 / 4)
-
-# ╔═╡ 1c99e13e-e034-4d55-91be-ec22f1125a3d
-# ╠═╡ disabled = true
-#=╠═╡
-Viewer(devaney22, crit = devaneycrit, mandel_diameter = 1.0)
-  ╠═╡ =#
-
 # ╔═╡ fa18fc4e-c7a7-4268-ab77-368a277d2ae6
 md"""
 # The ``Per_3(0)`` family
@@ -210,6 +193,62 @@ f51(z) = 4 / 27 * (z - 1)^3 / z
 Julia3D(f51)
   ╠═╡ =#
 
+# ╔═╡ 79cbbb8b-8add-4d95-87f2-a9d825494636
+md"""
+## The Devaney (2,2) family
+"""
+
+# ╔═╡ fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
+devaney22(z, λ) = z^2 + λ / z^2
+
+# ╔═╡ 36714bb2-3622-47eb-a7b5-f4c99145bd59
+devaney22crit(λ) = λ^(1 / 4)
+
+# ╔═╡ 1c99e13e-e034-4d55-91be-ec22f1125a3d
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer(devaney22, crit = devaney22crit, mandel_diameter = 1.0)
+  ╠═╡ =#
+
+# ╔═╡ 29c2e25e-77f0-4d9f-94b0-163f8e58c7f8
+md"""
+## Devaney (2,1): A cubic symmetry locus
+"""
+
+# ╔═╡ 0e78c206-3a75-419c-80d6-5ef4a8af6dc4
+md"""
+Cubic maps with $f(\infty) = \infty$, $f'(\infty) = 0$ and the symmetry $f(\omega z) = \omega^2 f(z)$ where $\omega=\omega_3 = e^{2\pi i/3}$.
+"""
+
+# ╔═╡ 6cecbde5-42bc-4d74-8f68-2b458912585a
+devaney21(z,λ) = z^2 + λ/z
+
+# ╔═╡ 1388f3fa-c79e-4e4e-9455-b789fdb51378
+devaney21crit(λ) = (λ/2)^(1/3)
+
+# ╔═╡ 3c9b33d6-19a5-4cea-a787-cb143c9c82ee
+# ╠═╡ disabled = true
+#=╠═╡
+Viewer(devaney21, crit = devaney21crit, mandel_diameter=1.5,c=-16/27)
+  ╠═╡ =#
+
+# ╔═╡ 60c35275-4216-40c1-91f0-ae35d0e8b31a
+md"""
+Special values: for $\lambda_1 = -16/27$, the Julia set is a Sierpiński gasket (with preperiodic free crit pt). For $\lambda_2=2/27$, the Julia set is the double of a Sierpiński gasket, this time hyperbolic.
+"""
+
+# ╔═╡ c70accb2-d5ba-405d-96cf-745dd8daba06
+gasket1(z) = devaney21(z,-16/27)
+
+# ╔═╡ bd6f8d54-1fde-4b73-a9f2-196e1df43eb2
+gasket2(z) = devaney21(z, 2/27)
+
+# ╔═╡ 35a3f7e6-18df-4733-96ec-e746b3adc38e
+# ╠═╡ disabled = true
+#=╠═╡
+Julia3D(gasket2)
+  ╠═╡ =#
+
 # ╔═╡ dc85ce65-38a8-4990-86f5-ed6894b96695
 md"""
 ## Instantiating Package
@@ -234,10 +273,6 @@ MandelMakie.get_attractors(v)
 # ╠═8848c897-3fb7-4a7d-aa5f-d6b34438decb
 # ╠═ac6a0d56-8990-45a8-90e0-4b876024c1c1
 # ╠═130ce106-d086-4c4e-af9d-9369208e2562
-# ╟─79cbbb8b-8add-4d95-87f2-a9d825494636
-# ╠═fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
-# ╠═36714bb2-3622-47eb-a7b5-f4c99145bd59
-# ╠═1c99e13e-e034-4d55-91be-ec22f1125a3d
 # ╟─fa18fc4e-c7a7-4268-ab77-368a277d2ae6
 # ╠═363f547e-715c-4b5e-b657-5c41f8e674ca
 # ╠═dd5a428d-c4af-4121-8905-902ca0ec1310
@@ -249,11 +284,24 @@ MandelMakie.get_attractors(v)
 # ╠═bea223da-13a5-4662-9e1f-ed6b27cf6d54
 # ╠═2962904d-2c4d-4fe7-9c59-f735ab953bfa
 # ╠═43af11b5-9593-4950-b853-8fa8869e6ace
-# ╟─9f9585b3-011c-4ae9-b5ce-069ecef3a23e
+# ╠═9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
 # ╠═1991d152-f45b-4b00-ab29-32f6d80c8997
 # ╠═f966a1a4-8b1a-4f84-8452-50ac7b0024e9
 # ╠═22b75feb-5c5e-42a4-aecc-b2f5ef4a938b
+# ╟─79cbbb8b-8add-4d95-87f2-a9d825494636
+# ╠═fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
+# ╠═36714bb2-3622-47eb-a7b5-f4c99145bd59
+# ╠═1c99e13e-e034-4d55-91be-ec22f1125a3d
+# ╠═29c2e25e-77f0-4d9f-94b0-163f8e58c7f8
+# ╟─0e78c206-3a75-419c-80d6-5ef4a8af6dc4
+# ╠═6cecbde5-42bc-4d74-8f68-2b458912585a
+# ╠═1388f3fa-c79e-4e4e-9455-b789fdb51378
+# ╠═3c9b33d6-19a5-4cea-a787-cb143c9c82ee
+# ╟─60c35275-4216-40c1-91f0-ae35d0e8b31a
+# ╠═c70accb2-d5ba-405d-96cf-745dd8daba06
+# ╠═bd6f8d54-1fde-4b73-a9f2-196e1df43eb2
+# ╠═35a3f7e6-18df-4733-96ec-e746b3adc38e
 # ╟─dc85ce65-38a8-4990-86f5-ed6894b96695
-# ╠═4a085b76-da75-11ee-2b50-07309082fb46
+# ╟─4a085b76-da75-11ee-2b50-07309082fb46
 # ╠═d04798ec-c7c7-4868-b761-f9bb65e9a269
