@@ -567,10 +567,6 @@ function get_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
 end
 
 function get_attractors(f::Function, c::Number; projective::Bool = false, ε::Real = 1e-4)
-    return find_attractors(h, 0.0im; projective = projective)
-end
-
-function find_attractors(f::Function, c::Number; projective::Bool = false)
     # If it is not a family ignores the parameter
     hasmethod(f, Tuple{ComplexF64,ComplexF64}) ||
         return get_attractors(f, projective = projective, ε = ε)
@@ -624,7 +620,7 @@ function rays(func, parameter)
     parameter = convert(ComplexF64, parameter)
     coefficients = coeffs(substitute(f, Dict(c => parameter)), z)
 
-    periods = unique!([length(a.cycle) for a in find_attractors(func, parameter)])
+    periods = unique!([length(a.cycle) for a in get_attractors(func, parameter)])
     return Rays.rays(coefficients, periods)
 end
 
