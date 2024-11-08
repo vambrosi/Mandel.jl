@@ -45,19 +45,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(q, mandel_center = -0.5,convergence_criterion=:near_attractor)
-  ╠═╡ =#
-
-# ╔═╡ 3556d294-8f27-4c1c-8568-d2c548869e79
-# ╠═╡ disabled = true
-#=╠═╡
-v = Viewer((z,λ) -> z^2 + λ*z, crit=λ -> -λ/2, convergence_criterion=:near_attractor)
-  ╠═╡ =#
-
-# ╔═╡ 781ae5e9-545e-4c6b-9285-86f01a91e8ff
-# ╠═╡ disabled = true
-#=╠═╡
-MandelMakie.get_attractors(v)
+Viewer(q, mandel_center = -0.5, coloring_method=:convergence_time)
   ╠═╡ =#
 
 # ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
@@ -74,10 +62,10 @@ md"""
 # ╔═╡ dc859310-0b21-4ede-a740-2b285f52a3df
 p2(z, c) = (z^2 - c) / (z^2 - 1)
 
-# ╔═╡ 8848c897-3fb7-4a7d-aa5f-d6b34438decb
+# ╔═╡ 781ae5e9-545e-4c6b-9285-86f01a91e8ff
 # ╠═╡ disabled = true
 #=╠═╡
-v = Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0, convergence_criterion=:near_attractor)
+MandelMakie.get_attractors(v)
   ╠═╡ =#
 
 # ╔═╡ ac6a0d56-8990-45a8-90e0-4b876024c1c1
@@ -257,6 +245,18 @@ md"""
 # ╔═╡ d04798ec-c7c7-4868-b761-f9bb65e9a269
 #=╠═╡
 MandelMakie.get_attractors(v)
+  ╠═╡ =#
+
+# ╔═╡ 8848c897-3fb7-4a7d-aa5f-d6b34438decb
+# ╠═╡ disabled = true
+#=╠═╡
+v = Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0, coloring_method=:convergence_time)
+  ╠═╡ =#
+
+# ╔═╡ 3556d294-8f27-4c1c-8568-d2c548869e79
+# ╠═╡ disabled = true
+#=╠═╡
+v = Viewer((z,λ) -> z^2 + λ*z, crit=λ -> -λ/2, coloring_method=:convergence_time)
   ╠═╡ =#
 
 # ╔═╡ Cell order:
