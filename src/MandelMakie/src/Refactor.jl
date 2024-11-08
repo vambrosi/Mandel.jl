@@ -776,6 +776,7 @@ mutable struct MandelView <: View
     marks::Observable{Vector{ComplexF64}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
+    refresh_rays::Function
 
     coloring_data::ColoringData
 
@@ -799,6 +800,7 @@ mutable struct MandelView <: View
             marks,
             rays,
             Vector{Any}[],
+            () -> nothing,
             coloring_data,
         )
     end
@@ -818,6 +820,7 @@ mutable struct JuliaView <: View
     marks::Observable{Vector{ComplexF64}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
+    refresh_rays::Function
     coloring_data::ColoringData
 
     function JuliaView(; center, diameter, parameter, pixels, coloring_data)
@@ -841,6 +844,7 @@ mutable struct JuliaView <: View
             marks,
             rays,
             Vector{Any}[],
+            () -> nothing,
             coloring_data,
         )
     end
@@ -1039,6 +1043,7 @@ function pick_parameter!(
     end
     else
         julia.rays = new_rays
+        julia.refresh_rays()
     end
 
     mandel.points[] = [julia.parameter]
@@ -1174,18 +1179,24 @@ function create_plot!(frame::Frame)
 
     lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
 
-    # for r in view.line_refs
-    #     delete!(frame.axis, r)
-    # end
-    # view.line_refs = []
-    for ray in view.rays
-        ray_vectors = lift(ray) do zs
-            xs, ys = to_pixel_space(view, zs)
-            return Point2f.(xs, ys)
+    view.line_refs = []
+    function rays_callback()
+        for r in view.line_refs
+            delete!(frame.axis, r)
         end
+        view.line_refs = []
+        for ray in view.rays
+            ray_vectors = lift(ray) do zs
+                xs, ys = to_pixel_space(view, zs)
+                return Point2f.(xs, ys)
+            end
 
-        push!(view.line_refs, lines!(frame.axis, ray_vectors, color=(:yellow, 0.5), inspectable=false))
+            push!(view.line_refs, lines!(frame.axis, ray_vectors, color=(:yellow, 0.5), inspectable=false))
+        end
     end
+
+    rays_callback()
+    view.refresh_rays = rays_callback
 
 
     scatter!(
