@@ -124,7 +124,7 @@ end
 @assert co_land(wrapper, [[1 // 7, 2 // 7, 4 // 7]])
 @assert !co_land(wrapper, [[1 // 7, 1 // 14]])
 
-function rays(coefficients::Vector{ComplexF64}, periods)
+function auto_rays(coefficients::Vector{ComplexF64}, periods)
     w = PolynomialWrapper(coefficients)
     angles = []
     for p in periods
@@ -133,7 +133,20 @@ function rays(coefficients::Vector{ComplexF64}, periods)
             push!(angles, n // den)
         end
     end
-    println(angles)
+    if length(angles) > 1000
+        return []
+    end
+
+    for a in angles
+        compute_ray!(w, a)
+    end
+
+    println(keys(w.stored_psi_values))
+    return collect(values(w.stored_psi_values))
+end
+
+function rays(coefficients::Vector{ComplexF64}, angles)
+    w = PolynomialWrapper(coefficients)
     for a in angles
         compute_ray!(w, a)
     end
