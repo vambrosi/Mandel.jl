@@ -4,7 +4,7 @@ using PolynomialRoots
 
 export PolynomialWrapper, compute_ray!
 # Constants
-eps_land = 1e-5
+eps_land = 1e-6
 eps_coland = 1e-3
 iterations = 1000
 outer_radius = 10
@@ -126,23 +126,44 @@ end
 
 function auto_rays(coefficients::Vector{ComplexF64}, periods)
     w = PolynomialWrapper(coefficients)
-    angles = []
-    for p in periods
-        den = w.degree^p - 1
-        for n in range(0, den - 1)
-            push!(angles, n // den)
+    lamination = []
+    d = w.degree
+    for period in 1:maximum(periods)
+        denom = d^period - 1
+        classes = []
+        for numeraitor in 0:(denom-1)
+            if denom > 1 && numeraitor == 0
+                continue
+            end
+            if gcd(denom,numeraitor) > 1
+                continue
+            end
+
+            angle = numeraitor//denom
+            added = false
+            compute_ray!(w,angle)
+            for (i, class) in enumerate(classes)
+                if co_land(w,[[class[1], angle]]) 
+                    push!(classes[i],angle)
+                    added = true
+                    break
+                end
+            end
+            if !added 
+                push!(classes,[angle])
+            end
+        end
+        for class in classes 
+            if length(class) > 1
+                push!(lamination, class)
+            end
         end
     end
-    if length(angles) > 1000
-        return []
-    end
+    angles = []
+    println(lamination)
+    relivant_rays = reduce(vcat, lamination, init=[])
 
-    for a in angles
-        compute_ray!(w, a)
-    end
-
-    println(keys(w.stored_psi_values))
-    return collect(values(w.stored_psi_values))
+    return [w.stored_psi_values[angle] for angle in relivant_rays]
 end
 
 function rays(coefficients::Vector{ComplexF64}, angles)
@@ -151,7 +172,6 @@ function rays(coefficients::Vector{ComplexF64}, angles)
         compute_ray!(w, a)
     end
 
-    println(keys(w.stored_psi_values))
     return collect(values(w.stored_psi_values))
 end
 end
