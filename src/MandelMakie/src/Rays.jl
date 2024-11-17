@@ -36,6 +36,7 @@ end
 @assert σ(wrapper, 1 // 7) == 2 // 7
 
 function fraction_to_dnary(w::PolynomialWrapper, theta::Rational{Int64}) 
+    @assert theta < 1
     function leading_place(theta) 
         return Int64(floor(theta*w.degree))
     end
@@ -164,9 +165,7 @@ function co_land(
             if dtheta > 0.5
                 dtheta = 1-dtheta
             end
-            # println(dtheta)
             threshhold = eps_coland * (1-(1-dtheta)^20)
-            # println([abs(p - landing_point(wrapper, θ)) , threshhold])
             if abs(p - landing_point(wrapper, θ)) > threshhold
                 return false
             end
@@ -184,7 +183,6 @@ w2 = PolynomialWrapper([-0.919348332549866 - 0.248822679143845im, 0, 1])
 
 
 function auto_rays(coefficients::Vector{ComplexF64}, periods)
-    println(periods)
     w = PolynomialWrapper(coefficients)
     lamination::Vector{Vector{Rational{Int64}}} = []
     d = w.degree
@@ -197,7 +195,6 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods)
             end
 
             angle = numeraitor//denom
-            # println(fraction_to_dnary(w,angle))
             added = false
             compute_ray!(w,angle)
             for (i, class) in enumerate(classes)
@@ -217,9 +214,38 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods)
             end
         end
     end
-    angles = []
+
+    for _ in 1:2
+        new_lam = lamination
+        for class in lamination
+            classes::Vector{Vector{Rational{Int64}}} = []
+            for branch in 0:(d-1)
+                for angle in class
+                    new_angle = (angle+branch)/d
+                    if new_angle in class
+                        continue
+                    end
+                    added = false
+                    compute_ray!(w,new_angle)
+                    for (i, class) in enumerate(classes)
+                        if co_land(w,[[class[1], new_angle]]) 
+                            push!(classes[i],new_angle)
+                            added = true
+                            break
+                        end
+                    end
+                    if !added 
+                        push!(classes,[new_angle])
+                    end
+                end
+            end
+            new_lam = [new_lam;classes]
+        end
+        lamination = new_lam
+    end
+
     println(lamination_manim(w,lamination))
-    relivant_rays =  Set(reduce(vcat, lamination, init=[]))
+    relivant_rays = Set(reduce(vcat, lamination, init=[]))
     # return collect(values(w.stored_psi_values))
 
     return [w.stored_psi_values[angle] for angle in relivant_rays]
