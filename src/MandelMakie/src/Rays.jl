@@ -1,10 +1,12 @@
 module Rays
+using JSON
 using LinearAlgebra
 using PolynomialRoots
 
 export PolynomialWrapper, compute_ray!
+
 # Constants
-eps_land = 1e-6
+eps_land = 1e-7
 eps_coland = 1e-3
 iterations = 1000
 outer_radius = 10
@@ -33,6 +35,48 @@ end
 
 @assert σ(wrapper, 1 // 7) == 2 // 7
 
+function fraction_to_dnary(w::PolynomialWrapper, theta::Rational{Int64}) 
+    function leading_place(theta) 
+        return Int64(floor(theta*w.degree))
+    end
+    periodic = gcd(denominator(theta),w.degree) == 1
+
+    if periodic 
+        ret = "_"
+        moment = theta
+        while true
+            ret *= string(leading_place(moment))
+            moment = σ(w,moment)
+            if moment == theta
+                return ret
+            end
+        end
+    else
+        return string(leading_place(theta)) * fraction_to_dnary(w,σ(w,theta))
+    end
+end
+
+@assert fraction_to_dnary(wrapper,1//14) == "0_001"
+function lamination_manim(
+    wrapper::PolynomialWrapper,
+    laminations::Vector{Vector{Rational{Int64}}}
+)
+    # Convert each rational to d-nary representation
+    converted_laminations = [
+        [fraction_to_dnary(wrapper, frac) for frac in subset]
+        for subset in laminations
+    ]
+    
+    # Create a dictionary to serialize
+    lamination_dict = Dict(
+        "polygons" => converted_laminations,
+        "degree" => wrapper.degree
+    )
+    
+    # Convert to JSON string
+    return JSON.json(lamination_dict)
+    return output
+end
 function newton(wrapper::PolynomialWrapper, z::ComplexF64, guess::ComplexF64)
     p = copy(wrapper.polynomial)
     p[1] -= z
@@ -113,7 +157,17 @@ function co_land(
         end
         p = landing_point(wrapper, eqclass[1])
         for θ in eqclass
-            if abs(p - landing_point(wrapper, θ)) > eps_coland
+            if eqclass[1] == θ 
+                continue
+            end
+            dtheta = 1.0*abs(eqclass[1] - θ)
+            if dtheta > 0.5
+                dtheta = 1-dtheta
+            end
+            # println(dtheta)
+            threshhold = eps_coland * (1-(1-dtheta)^20)
+            # println([abs(p - landing_point(wrapper, θ)) , threshhold])
+            if abs(p - landing_point(wrapper, θ)) > threshhold
                 return false
             end
         end
@@ -121,12 +175,18 @@ function co_land(
     return true
 end
 
+w2 = PolynomialWrapper([-0.919348332549866 - 0.248822679143845im, 0, 1])
+@assert !co_land(w2, [[1//(2^10-1), 1-1//(2^10-1)]])
+
 @assert co_land(wrapper, [[1 // 7, 2 // 7, 4 // 7]])
 @assert !co_land(wrapper, [[1 // 7, 1 // 14]])
 
+
+
 function auto_rays(coefficients::Vector{ComplexF64}, periods)
+    println(periods)
     w = PolynomialWrapper(coefficients)
-    lamination = []
+    lamination::Vector{Vector{Rational{Int64}}} = []
     d = w.degree
     for period in 1:maximum(periods)
         denom = d^period - 1
@@ -135,11 +195,9 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods)
             if denom > 1 && numeraitor == 0
                 continue
             end
-            if gcd(denom,numeraitor) > 1
-                continue
-            end
 
             angle = numeraitor//denom
+            # println(fraction_to_dnary(w,angle))
             added = false
             compute_ray!(w,angle)
             for (i, class) in enumerate(classes)
@@ -160,8 +218,9 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods)
         end
     end
     angles = []
-    println(lamination)
-    relivant_rays = reduce(vcat, lamination, init=[])
+    println(lamination_manim(w,lamination))
+    relivant_rays =  Set(reduce(vcat, lamination, init=[]))
+    # return collect(values(w.stored_psi_values))
 
     return [w.stored_psi_values[angle] for angle in relivant_rays]
 end
