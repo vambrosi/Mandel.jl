@@ -48,6 +48,18 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 Viewer(q, mandel_center = -0.5, coloring_method=:convergence_time)
   ╠═╡ =#
 
+# ╔═╡ 3556d294-8f27-4c1c-8568-d2c548869e79
+# ╠═╡ disabled = true
+#=╠═╡
+v = Viewer((z,λ) -> z^2 + λ*z, crit=λ -> -λ/2, coloring_method=:convergence_time)
+  ╠═╡ =#
+
+# ╔═╡ 781ae5e9-545e-4c6b-9285-86f01a91e8ff
+# ╠═╡ disabled = true
+#=╠═╡
+MandelMakie.get_attractors(v)
+  ╠═╡ =#
+
 # ╔═╡ 5cdbb1b3-e783-4a1f-839d-b15c566bc1f3
 # ╠═╡ disabled = true
 #=╠═╡
@@ -62,10 +74,10 @@ md"""
 # ╔═╡ dc859310-0b21-4ede-a740-2b285f52a3df
 p2(z, c) = (z^2 - c) / (z^2 - 1)
 
-# ╔═╡ 781ae5e9-545e-4c6b-9285-86f01a91e8ff
+# ╔═╡ 8848c897-3fb7-4a7d-aa5f-d6b34438decb
 # ╠═╡ disabled = true
 #=╠═╡
-MandelMakie.get_attractors(v)
+v = Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0, coloring_method=:convergence_time)
   ╠═╡ =#
 
 # ╔═╡ ac6a0d56-8990-45a8-90e0-4b876024c1c1
@@ -95,10 +107,7 @@ md"""
 per3(z, c) = (z^2 - 1 - c + c^3) / (z^2 - c^2)
 
 # ╔═╡ dd5a428d-c4af-4121-8905-902ca0ec1310
-# ╠═╡ disabled = true
-#=╠═╡
 Viewer(per3, mandel_diameter = 6.0, coloring_method=:convergence_time)
-  ╠═╡ =#
 
 # ╔═╡ 744228c4-23f4-409a-805a-faa672e6fa9b
 # ╠═╡ disabled = true
@@ -245,18 +254,6 @@ md"""
 # ╔═╡ d04798ec-c7c7-4868-b761-f9bb65e9a269
 #=╠═╡
 MandelMakie.get_attractors(v)
-  ╠═╡ =#
-
-# ╔═╡ 8848c897-3fb7-4a7d-aa5f-d6b34438decb
-# ╠═╡ disabled = true
-#=╠═╡
-v = Viewer(p2, mandel_center = -0.5, mandel_diameter = 6.0, julia_diameter = 6.0, coloring_method=:convergence_time)
-  ╠═╡ =#
-
-# ╔═╡ 3556d294-8f27-4c1c-8568-d2c548869e79
-# ╠═╡ disabled = true
-#=╠═╡
-v = Viewer((z,λ) -> z^2 + λ*z, crit=λ -> -λ/2, coloring_method=:convergence_time)
   ╠═╡ =#
 
 # ╔═╡ Cell order:
