@@ -3,6 +3,7 @@ module Refactor
 export Viewer, Attractor, get_attractors, get_parameter, critical_points
 
 using GLMakie, Symbolics, StaticArraysCore, LinearAlgebra, Polynomials, HypertextLiteral
+include("./Rays.jl")
 using GLMakie.Colors
 using Crayons
 
@@ -446,11 +447,12 @@ end
 # Finding Attractors
 # --------------------------------------------------------------------------------------- #
 
+
 function coeffs(polynomial, z)
     polynomial = expand(polynomial)
     d = Symbolics.degree(polynomial)
 
-    coefficients = ComplexF64[Symbolics.coeff(polynomial, z^d) for d in 1:d]
+    coefficients::Vector{ComplexF64} = [Symbolics.coeff(polynomial, z^d) for d in 1:d]
     prepend!(coefficients, Symbolics.substitute(polynomial, Dict(z => 0)))
     return convert.(ComplexF64, coefficients)
 end
@@ -611,6 +613,25 @@ function get_attractors(f::Function, c::Number; projective::Bool = false, ε::Re
     return a
 end
 
+
+function rays(func, parameter,show_rays)
+    if show_rays == false
+        return []
+    end
+    @variables z, c
+    f = func(z, c) |> Symbolics.value
+    parameter = convert(ComplexF64, parameter)
+    coefficients = coeffs(substitute(f, Dict(c => parameter)), z)
+
+    if show_rays == "auto"
+        periods = unique!([length(a.cycle) for a in get_attractors(func, parameter)])
+        return Rays.auto_rays(coefficients, periods)
+    else
+        # list of angles
+        return Rays.rays(coefficients,show_rays)
+    end
+end
+
 # --------------------------------------------------------------------------------------- #
 # Coloring Algorithms
 # --------------------------------------------------------------------------------------- #
@@ -761,8 +782,12 @@ mutable struct MandelView <: View
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
+    rays::Vector{Observable{Vector{ComplexF64}}}
+    line_refs::Vector{Any}
+    refresh_rays::Function
 
     coloring_data::ColoringData
+    show_rays::Any
 
     function MandelView(; center, diameter, pixels, coloring_data)
         diameter > 0.0 || throw("diameter must be a positive real")
@@ -771,6 +796,7 @@ mutable struct MandelView <: View
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = ComplexF64[]
+        rays = Observable{Vector{ComplexF64}}[]
 
         return new(
             center,
@@ -781,7 +807,11 @@ mutable struct MandelView <: View
             colors,
             points,
             marks,
+            rays,
+            Vector{Any}[],
+            () -> nothing,
             coloring_data,
+            0,
         )
     end
 end
@@ -798,16 +828,20 @@ mutable struct JuliaView <: View
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
     marks::Observable{Vector{ComplexF64}}
-
+    rays::Vector{Observable{Vector{ComplexF64}}}
+    line_refs::Vector{Any}
+    refresh_rays::Function
     coloring_data::ColoringData
+    show_rays::Any
 
-    function JuliaView(; center, diameter, parameter, pixels, coloring_data)
+    function JuliaView(; center, diameter, parameter, pixels, coloring_data, show_rays)
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = ComplexF64[]
+        rays = Observable{Vector{ComplexF64}}[]
 
         return new(
             center,
@@ -819,7 +853,11 @@ mutable struct JuliaView <: View
             colors,
             points,
             marks,
+            rays,
+            Vector{Any}[],
+            () -> nothing,
             coloring_data,
+            show_rays
         )
     end
 end
@@ -987,6 +1025,10 @@ function update_view!(view::View, d_system::DynamicalSystem, options::Options)
     notify(view.points)
     notify(view.marks)
 
+    for ray in view.rays
+        notify(ray)
+    end
+
     return view
 end
 
@@ -1005,6 +1047,16 @@ function pick_parameter!(
         julia.parameter,
         options.critical_length - 1,
     )
+
+    new_rays = rays(d_system.map, julia.parameter, julia.show_rays)
+    if length(julia.rays) == length(new_rays) 
+    for (ray, new_ray) in zip(julia.rays, new_rays)
+        ray[] = new_ray
+    end
+    else
+        julia.rays = [Observable(ray) for ray in new_rays]
+        julia.refresh_rays()
+    end
 
     mandel.points[] = [julia.parameter]
 
@@ -1138,6 +1190,25 @@ function create_plot!(frame::Frame)
     end
 
     lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
+
+    view.line_refs = []
+    function rays_callback()
+        for r in view.line_refs
+            delete!(frame.axis, r)
+        end
+        view.line_refs = []
+        for ray in view.rays
+            ray_vectors = lift(ray) do zs
+                xs, ys = to_pixel_space(view, zs)
+                return Point2f.(xs, ys)
+            end
+
+            push!(view.line_refs, lines!(frame.axis, ray_vectors, color=(:yellow, 0.5), inspectable=false))
+        end
+    end
+
+    rays_callback()
+    view.refresh_rays = rays_callback
 
     scatter!(
         frame.axis,
@@ -1572,8 +1643,12 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
   - `grid_width = 800`: Width (and height) of the grid of complex numbers used to plot \
     sets.
   - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if \
-    `false` they are shown side-by-side.
-
+    `false` they are shown side-by-side. 
+  - `show_rays = false`: Rays can only be computed for polynomials. Only the dynamic \
+    rays can be computed as yet. If 'false', no  rays are shown. If a vector of \
+    Rational64 is given, then the orbits of those  rays are displayed. If 'auto' \
+    is given, a reasonable collection of rays are computed and displayed depending \
+    on the polynomial. 
 # Coloring Method Options
 
 For the options below, if you want to set different values for the Mandelbrot and Julia \
@@ -1623,6 +1698,7 @@ struct Viewer
         grid_width = 800,
         coloring_method = :escape_time,
         projective_metric = false,
+        show_rays = false,
     )
         # Put options in standard form
         projective_metrics = make_tuple(projective_metric)
@@ -1666,11 +1742,14 @@ struct Viewer
             parameter = c,
             pixels = grid_width,
             coloring_data = julia_coloring,
+            show_rays=show_rays,
         )
 
         store_schemes!(options, julia_coloring.attractors)
 
         julia.marks[] = [d_system.critical_point(julia.parameter)]
+
+        julia.rays = [Observable(ray) for ray in rays(d_system.map, julia.parameter, show_rays)]
         pick_orbit!(julia, d_system, options, julia.points[][begin])
 
         left_frame, right_frame = create_frames!(figure, options, mandel, julia)
