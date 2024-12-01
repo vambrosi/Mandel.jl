@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.46
+# v0.19.38
 
 using Markdown
 using InteractiveUtils
@@ -101,13 +101,35 @@ Viewer3D(p2)
 # ╔═╡ fa18fc4e-c7a7-4268-ab77-368a277d2ae6
 md"""
 # The ``Per_3(0)`` family
+This is the parametrization with marked cycle
+```math
+\infty \overset{2}{\longmapsto} 1 \longmapsto c \longmapsto \infty
+```
+with free/active critical point at $0$.
+
+For some reason some sources have $-c$ in the cycle rather than $c$.
+
+(Where are the punctures?)
 """
 
 # ╔═╡ 363f547e-715c-4b5e-b657-5c41f8e674ca
-per3(z, c) = (z^2 - 1 - c + c^3) / (z^2 - c^2)
+per3(z, c) = (z^2 - 1 + c - c^3) / (z^2 - c^2)
 
 # ╔═╡ dd5a428d-c4af-4121-8905-902ca0ec1310
-Viewer(per3, mandel_diameter = 6.0, coloring_method=:convergence_time)
+# ╠═╡ disabled = true
+#=╠═╡
+v = Viewer(per3, mandel_diameter = 6.0, coloring_method=:convergence_time)
+  ╠═╡ =#
+
+# ╔═╡ 3abbe3bf-f58e-460c-b5f1-81c14e43dd6b
+#=╠═╡
+MandelMakie.get_attractors(v)
+  ╠═╡ =#
+
+# ╔═╡ 790a5bff-7422-41cc-a622-34056f5bace3
+#=╠═╡
+MandelMakie.get_parameter(v)
+  ╠═╡ =#
 
 # ╔═╡ 744228c4-23f4-409a-805a-faa672e6fa9b
 # ╠═╡ disabled = true
@@ -167,18 +189,24 @@ Viewer(
 )
   ╠═╡ =#
 
+# ╔═╡ e3045f93-acd6-4ccd-9898-3765b980e7f0
+
+
 # ╔═╡ 9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 md"""
 ## Census maps
 """
 
-# ╔═╡ f9c1ce04-81de-4458-8bf1-8225956b1011
-f49(z) = (z / 3 - 1)^3 / (z - 1)
+# ╔═╡ 0ac919c3-7c22-48cc-9256-1600f3fc3d3f
 
-# ╔═╡ 1991d152-f45b-4b00-ab29-32f6d80c8997
+
+# ╔═╡ f9c1ce04-81de-4458-8bf1-8225956b1011
+f49(z) = z^2 * (z-1) / ((z - 2/3)^2 * (z + 1/3))
+
+# ╔═╡ 3bcf1908-b27b-4734-8315-08121ce1657b
 # ╠═╡ disabled = true
 #=╠═╡
-Fatou3D(f49, show_critical_points = true)
+Viewer(f49, coloring_method=:convergence_time, c=2/3)
   ╠═╡ =#
 
 # ╔═╡ f966a1a4-8b1a-4f84-8452-50ac7b0024e9
@@ -273,6 +301,8 @@ MandelMakie.get_attractors(v)
 # ╟─fa18fc4e-c7a7-4268-ab77-368a277d2ae6
 # ╠═363f547e-715c-4b5e-b657-5c41f8e674ca
 # ╠═dd5a428d-c4af-4121-8905-902ca0ec1310
+# ╠═3abbe3bf-f58e-460c-b5f1-81c14e43dd6b
+# ╠═790a5bff-7422-41cc-a622-34056f5bace3
 # ╠═744228c4-23f4-409a-805a-faa672e6fa9b
 # ╠═ef15c50e-4158-4716-994b-c8885d9f81af
 # ╟─a9c743b4-7214-4b4d-b229-39aea38215bb
@@ -281,9 +311,11 @@ MandelMakie.get_attractors(v)
 # ╠═bea223da-13a5-4662-9e1f-ed6b27cf6d54
 # ╠═2962904d-2c4d-4fe7-9c59-f735ab953bfa
 # ╠═43af11b5-9593-4950-b853-8fa8869e6ace
+# ╠═e3045f93-acd6-4ccd-9898-3765b980e7f0
 # ╠═9f9585b3-011c-4ae9-b5ce-069ecef3a23e
+# ╠═0ac919c3-7c22-48cc-9256-1600f3fc3d3f
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
-# ╠═1991d152-f45b-4b00-ab29-32f6d80c8997
+# ╠═3bcf1908-b27b-4734-8315-08121ce1657b
 # ╠═f966a1a4-8b1a-4f84-8452-50ac7b0024e9
 # ╠═22b75feb-5c5e-42a4-aecc-b2f5ef4a938b
 # ╟─79cbbb8b-8add-4d95-87f2-a9d825494636
