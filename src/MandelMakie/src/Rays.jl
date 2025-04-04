@@ -35,45 +35,40 @@ end
 
 @assert σ(wrapper, 1 // 7) == 2 // 7
 
-function fraction_to_dnary(w::PolynomialWrapper, theta::Rational{Int64}) 
+function fraction_to_dnary(w::PolynomialWrapper, theta::Rational{Int64})
     @assert theta < 1
-    function leading_place(theta) 
-        return Int64(floor(theta*w.degree))
+    function leading_place(theta)
+        return Int64(floor(theta * w.degree))
     end
-    periodic = gcd(denominator(theta),w.degree) == 1
+    periodic = gcd(denominator(theta), w.degree) == 1
 
-    if periodic 
+    if periodic
         ret = "_"
         moment = theta
         while true
             ret *= string(leading_place(moment))
-            moment = σ(w,moment)
+            moment = σ(w, moment)
             if moment == theta
                 return ret
             end
         end
     else
-        return string(leading_place(theta)) * fraction_to_dnary(w,σ(w,theta))
+        return string(leading_place(theta)) * fraction_to_dnary(w, σ(w, theta))
     end
 end
 
-@assert fraction_to_dnary(wrapper,1//14) == "0_001"
+@assert fraction_to_dnary(wrapper, 1 // 14) == "0_001"
 function lamination_manim(
     wrapper::PolynomialWrapper,
-    laminations::Vector{Vector{Rational{Int64}}}
+    laminations::Vector{Vector{Rational{Int64}}},
 )
     # Convert each rational to d-nary representation
-    converted_laminations = [
-        [fraction_to_dnary(wrapper, frac) for frac in subset]
-        for subset in laminations
-    ]
-    
+    converted_laminations =
+        [[fraction_to_dnary(wrapper, frac) for frac in subset] for subset in laminations]
+
     # Create a dictionary to serialize
-    lamination_dict = Dict(
-        "polygons" => converted_laminations,
-        "degree" => wrapper.degree
-    )
-    
+    lamination_dict = Dict("polygons" => converted_laminations, "degree" => wrapper.degree)
+
     # Convert to JSON string
     return JSON.json(lamination_dict)
     return output
@@ -158,14 +153,14 @@ function co_land(
         end
         p = landing_point(wrapper, eqclass[1])
         for θ in eqclass
-            if eqclass[1] == θ 
+            if eqclass[1] == θ
                 continue
             end
-            dtheta = 1.0*abs(eqclass[1] - θ)
+            dtheta = 1.0 * abs(eqclass[1] - θ)
             if dtheta > 0.5
-                dtheta = 1-dtheta
+                dtheta = 1 - dtheta
             end
-            threshhold = eps_coland * (1-(1-dtheta)^20)
+            threshhold = eps_coland * (1 - (1 - dtheta)^20)
             if abs(p - landing_point(wrapper, θ)) > threshhold
                 return false
             end
@@ -175,12 +170,10 @@ function co_land(
 end
 
 w2 = PolynomialWrapper([-0.919348332549866 - 0.248822679143845im, 0, 1])
-@assert !co_land(w2, [[1//(2^10-1), 1-1//(2^10-1)]])
+@assert !co_land(w2, [[1 // (2^10 - 1), 1 - 1 // (2^10 - 1)]])
 
 @assert co_land(wrapper, [[1 // 7, 2 // 7, 4 // 7]])
 @assert !co_land(wrapper, [[1 // 7, 1 // 14]])
-
-
 
 function auto_rays(coefficients::Vector{ComplexF64}, periods)
     w = PolynomialWrapper(coefficients)
@@ -193,59 +186,62 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods)
             if denom > 1 && numeraitor == 0
                 continue
             end
+            if any(x -> numeraitor // denom in x, lamination)
+                continue
+            end
 
-            angle = numeraitor//denom
+            angle = numeraitor // denom
             added = false
-            compute_ray!(w,angle)
+            compute_ray!(w, angle)
             for (i, class) in enumerate(classes)
-                if co_land(w,[[class[1], angle]]) 
-                    push!(classes[i],angle)
+                if co_land(w, [[class[1], angle]])
+                    push!(classes[i], angle)
                     added = true
                     break
                 end
             end
-            if !added 
-                push!(classes,[angle])
+            if !added
+                push!(classes, [angle])
             end
         end
-        for class in classes 
+        for class in classes
             if length(class) > 1
                 push!(lamination, class)
             end
         end
     end
 
-    for _ in 1:2
+    for _ in 1:1
         new_lam = lamination
         for class in lamination
             classes::Vector{Vector{Rational{Int64}}} = []
             for branch in 0:(d-1)
                 for angle in class
-                    new_angle = (angle+branch)/d
+                    new_angle = (angle + branch) / d
                     if new_angle in class
                         continue
                     end
                     added = false
-                    compute_ray!(w,new_angle)
+                    compute_ray!(w, new_angle)
                     for (i, class) in enumerate(classes)
-                        if co_land(w,[[class[1], new_angle]]) 
-                            push!(classes[i],new_angle)
+                        if co_land(w, [[class[1], new_angle]])
+                            push!(classes[i], new_angle)
                             added = true
                             break
                         end
                     end
-                    if !added 
-                        push!(classes,[new_angle])
+                    if !added
+                        push!(classes, [new_angle])
                     end
                 end
             end
-            new_lam = [new_lam;classes]
+            new_lam = [new_lam; classes]
         end
         lamination = new_lam
     end
 
-    println(lamination_manim(w,lamination))
-    relivant_rays = Set(reduce(vcat, lamination, init=[]))
+    println(lamination_manim(w, lamination))
+    relivant_rays = Set(reduce(vcat, lamination, init = []))
     # return collect(values(w.stored_psi_values))
 
     return [w.stored_psi_values[angle] for angle in relivant_rays]
