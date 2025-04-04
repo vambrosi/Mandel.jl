@@ -175,7 +175,7 @@ w2 = PolynomialWrapper([-0.919348332549866 - 0.248822679143845im, 0, 1])
 @assert co_land(wrapper, [[1 // 7, 2 // 7, 4 // 7]])
 @assert !co_land(wrapper, [[1 // 7, 1 // 14]])
 
-function auto_rays(coefficients::Vector{ComplexF64}, periods)
+function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
     w = PolynomialWrapper(coefficients)
     lamination::Vector{Vector{Rational{Int64}}} = []
     d = w.degree
@@ -211,14 +211,20 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods)
         end
     end
 
-    for _ in 1:1
+    for _ in 1:pullbacks
         new_lam = lamination
         for class in lamination
             classes::Vector{Vector{Rational{Int64}}} = []
             for branch in 0:(d-1)
                 for angle in class
                     new_angle = (angle + branch) / d
-                    if new_angle in class
+                    new = true
+                    for other_class in lamination
+                        if new_angle in other_class
+                            new = false
+                        end
+                    end
+                    if !new
                         continue
                     end
                     added = false
