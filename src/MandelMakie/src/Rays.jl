@@ -175,39 +175,49 @@ w2 = PolynomialWrapper([-0.919348332549866 - 0.248822679143845im, 0, 1])
 @assert co_land(wrapper, [[1 // 7, 2 // 7, 4 // 7]])
 @assert !co_land(wrapper, [[1 // 7, 1 // 14]])
 
-function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
-    w = PolynomialWrapper(coefficients)
-    lamination::Vector{Vector{Rational{Int64}}} = []
+function periodic_angles(w, max_period)
     d = w.degree
-    for period in 1:maximum(periods)
+    angles = Set{Rational{Int64}}()
+
+    for period in 1:max_period
         denom = d^period - 1
-        classes = []
         for numeraitor in 0:(denom-1)
             if denom > 1 && numeraitor == 0
                 continue
             end
-            if any(x -> numeraitor // denom in x, lamination)
-                continue
-            end
 
-            angle = numeraitor // denom
-            added = false
-            compute_ray!(w, angle)
-            for (i, class) in enumerate(classes)
-                if co_land(w, [[class[1], angle]])
-                    push!(classes[i], angle)
-                    added = true
-                    break
-                end
-            end
-            if !added
-                push!(classes, [angle])
+            push!(angles, numerator // denom)
+        end
+    end
+
+    return angles
+end
+
+function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
+    w = PolynomialWrapper(coefficients)
+    d = w.degree
+    max_period = maximum(periods)
+    classes1::Vector{Vector{Rational{Int64}}} = []
+
+    for angle in periodic_angles(w, max_period)
+        added = false
+        compute_ray!(w, angle)
+        for (i, class) in enumerate(classes1)
+            if co_land(w, [[class[1], angle]])
+                push!(classes1[i], angle)
+                added = true
+                break
             end
         end
-        for class in classes
-            if length(class) > 1
-                push!(lamination, class)
-            end
+        if !added
+            push!(classes1, [angle])
+        end
+    end
+
+    lamination::Vector{Vector{Rational{Int64}}} = []
+    for class in classes
+        if length(class) > 1
+            push!(lamination, class)
         end
     end
 
@@ -251,6 +261,11 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
     # return collect(values(w.stored_psi_values))
 
     return [w.stored_psi_values[angle] for angle in relivant_rays]
+end
+
+function all_periodic(coefficients, period)
+    w = PolynomialWrapper(coefficients)
+    return rays(coefficients, periodic_angles(w, period))
 end
 
 function rays(coefficients::Vector{ComplexF64}, angles)

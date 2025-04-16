@@ -623,9 +623,14 @@ function rays(func, parameter, show_rays, options)
 
     if show_rays == "auto"
         periods = unique!([length(a.cycle) for a in get_attractors(func, parameter)])
+        println(options.period)
+        if options.period != -1
+            periods = [options.period]
+        end
         return Rays.auto_rays(coefficients, periods, options.pullbacks)
+    elseif show_rays == "all"
+        return Rays.all_periodic(coefficients, options.period)
     else
-        # list of angles
         return Rays.rays(coefficients, show_rays)
     end
 end
@@ -768,6 +773,7 @@ mutable struct Options
     coloring_methods::Tuple{Symbol,Symbol}
     coloring_schemes::Vector{ColoringScheme}
     pullbacks::Int
+    period::Int
 end
 
 mutable struct MandelView <: View
@@ -1463,10 +1469,9 @@ function add_buttons!(
             placeholder = string(options.convergence_radius),
             validator = Float64,
         ),
-        :rays => Button(layout[1, button_shift+11], label = "R", halign = :left),
     )
 
-    if show_rays == "auto"
+    if show_rays == "auto" || show_rays == "all"
         labels[:pullbacks] = Label(layout[1, button_shift+9], "Pullbacks:")
         inputs[:pullbacks] = Textbox(
             layout[1, button_shift+10],
@@ -1474,10 +1479,21 @@ function add_buttons!(
             placeholder = string(options.pullbacks),
             validator = Int,
         )
-    end
+        labels[:period] = Label(layout[1, button_shift+11], "Period:")
+        inputs[:period] = Textbox(
+            layout[1, button_shift+12],
+            width = 60,
+            placeholder = string(options.period),
+            validator = Int,
+        )
+        inputs[:rays] = Button(layout[1, button_shift+13], label = "R", halign = :left)
 
-    on(inputs[:pullbacks].stored_string) do s
-        options.pullbacks = parse(Int, s)
+        on(inputs[:pullbacks].stored_string) do s
+            options.pullbacks = parse(Int, s)
+        end
+        on(inputs[:period].stored_string) do s
+            options.period = parse(Int, s)
+        end
     end
 
     on(inputs[:rays].clicks, priority = 200) do event
@@ -1765,6 +1781,7 @@ struct Viewer
             coloring_methods,
             ColoringScheme[],
             0,
+            -1,
         )
         figure = Figure(size = (800, 850))
 
