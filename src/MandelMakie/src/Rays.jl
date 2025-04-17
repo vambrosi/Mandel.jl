@@ -267,9 +267,23 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
     return [w.stored_psi_values[angle] for angle in relivant_rays]
 end
 
-function all_periodic(coefficients, period)
+function all_periodic(coefficients, options)
     w = PolynomialWrapper(coefficients)
-    return rays(coefficients, periodic_angles(w, period))
+    d = w.degree
+    angles = periodic_angles(w, options.period)
+
+    for _ in 1:options.pullbacks
+        new_angles = Set{Rational{Int64}}()
+        for angle in angles
+            for branch in 0:(d-1)
+                new_angle = (angle + branch) / d
+                push!(new_angles, new_angle)
+            end
+        end
+        angles = new_angles
+    end
+
+    return rays(coefficients, angles)
 end
 
 function rays(coefficients::Vector{ComplexF64}, angles)

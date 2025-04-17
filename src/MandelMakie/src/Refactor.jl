@@ -621,11 +621,11 @@ function rays(func, parameter, show_rays, options)
     parameter = convert(ComplexF64, parameter)
     coefficients = coeffs(substitute(f, Dict(c => parameter)), z)
 
-    if show_rays == "auto"
+    if show_rays == :auto
         periods = [options.period]
         return Rays.auto_rays(coefficients, periods, options.pullbacks)
-    elseif show_rays == "all"
-        return Rays.all_periodic(coefficients, options.period)
+    elseif show_rays == :all
+        return Rays.all_periodic(coefficients, options)
     else
         return Rays.rays(coefficients, show_rays)
     end
@@ -1467,7 +1467,7 @@ function add_buttons!(
         ),
     )
 
-    if show_rays == "auto" || show_rays == "all"
+    if show_rays == :auto || show_rays == :all
         labels[:pullbacks] = Label(layout[1, button_shift+9], "Pullbacks:")
         inputs[:pullbacks] = Textbox(
             layout[1, button_shift+10],
@@ -1475,7 +1475,7 @@ function add_buttons!(
             placeholder = string(options.pullbacks),
             validator = Int,
         )
-        labels[:period] = Label(layout[1, button_shift+11], "Period:")
+        labels[:period] = Label(layout[1, button_shift+11], "Max\n Period:")
         inputs[:period] = Textbox(
             layout[1, button_shift+12],
             width = 60,
@@ -1702,9 +1702,10 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
     `false` they are shown side-by-side.
   - `show_rays = false`: Rays can only be computed for polynomials. Only the dynamic \
     rays can be computed as yet. If 'false', no  rays are shown. If a vector of \
-    Rational64 is given, then the orbits of those  rays are displayed. If 'auto' \
-    is given, a reasonable collection of rays are computed and displayed depending \
-    on the polynomial.
+    Rational64 is given, then the orbits of those  rays are displayed. If :all \
+    is given then a button will be added to compute all the rays up to a period and \
+    pullbacks. If :auto is given, then those rays are then filtered by weather they
+    land at a cut point, and a lamination is printed.
 
 # Coloring Method Options
 
