@@ -622,11 +622,7 @@ function rays(func, parameter, show_rays, options)
     coefficients = coeffs(substitute(f, Dict(c => parameter)), z)
 
     if show_rays == "auto"
-        periods = unique!([length(a.cycle) for a in get_attractors(func, parameter)])
-        println(options.period)
-        if options.period != -1
-            periods = [options.period]
-        end
+        periods = [options.period]
         return Rays.auto_rays(coefficients, periods, options.pullbacks)
     elseif show_rays == "all"
         return Rays.all_periodic(coefficients, options.period)
@@ -1494,16 +1490,16 @@ function add_buttons!(
         on(inputs[:period].stored_string) do s
             options.period = parse(Int, s)
         end
-    end
 
-    on(inputs[:rays].clicks, priority = 200) do event
-        inputs[:rays].label = "X"
+        on(inputs[:rays].clicks, priority = 200) do event
+            inputs[:rays].label = "X"
 
-        new_rays = rays(d_system.map, julia.parameter, julia.show_rays, options)
-        julia.rays = [Observable(ray) for ray in new_rays]
-        julia.refresh_rays()
+            new_rays = rays(d_system.map, julia.parameter, julia.show_rays, options)
+            julia.rays = [Observable(ray) for ray in new_rays]
+            julia.refresh_rays()
 
-        inputs[:rays].label = "R"
+            inputs[:rays].label = "R"
+        end
     end
 
     on(inputs[:max_iter].stored_string) do s
@@ -1781,7 +1777,7 @@ struct Viewer
             coloring_methods,
             ColoringScheme[],
             0,
-            -1,
+            1,
         )
         figure = Figure(size = (800, 850))
 

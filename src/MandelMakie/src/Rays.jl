@@ -181,17 +181,21 @@ function periodic_angles(w, max_period)
 
     for period in 1:max_period
         denom = d^period - 1
-        for numeraitor in 0:(denom-1)
-            if denom > 1 && numeraitor == 0
-                continue
-            end
-
+        for numerator in 0:(denom-1)
             push!(angles, numerator // denom)
         end
     end
 
     return angles
 end
+
+@assert periodic_angles(w2, 1) == Set(Rational{Int64}[0])
+@assert periodic_angles(w2, 2) == Set(Rational{Int64}[0, 2//3, 1//3])
+
+w3 = PolynomialWrapper([-0.919348332549866 - 0.248822679143845im, 0, 0, 1])
+@assert periodic_angles(w3, 1) == Set(Rational{Int64}[0, 1//2])
+@assert periodic_angles(w3, 2) ==
+        Set(Rational{Int64}[0, 3//8, 1//2, 5//8, 1//4, 3//4, 7//8, 1//8])
 
 function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
     w = PolynomialWrapper(coefficients)
@@ -215,7 +219,7 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
     end
 
     lamination::Vector{Vector{Rational{Int64}}} = []
-    for class in classes
+    for class in classes1
         if length(class) > 1
             push!(lamination, class)
         end
