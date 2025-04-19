@@ -135,7 +135,7 @@ struct DynamicalSystem
             h = (z, c) -> f(z, c)
         end
 
-        return new(extend_family(h), extend_function(critical_point))
+        return new(h, critical_point)
     end
 end
 
@@ -688,7 +688,13 @@ function to_color(
     return attractor.palette[floor(Int, depth)]
 end
 
-escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:depth))
+function escape_time(f, z, c, a, ε, N)
+    times = [convergence_time(f, zi, c, a, ε, N) for zi in z]
+    ultimate_index = findmax(map(t -> t[1], times))[2]
+    max_time = times[ultimate_index]
+    # return max_iterations + 1, ε, empty_attractor, 0
+    return to_color(max_time..., Val(:depth))
+end
 mod_period(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:mod))
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
 
@@ -1807,7 +1813,7 @@ struct Viewer
 
         store_schemes!(options, julia_coloring.attractors)
 
-        julia.marks[] = [d_system.critical_point(julia.parameter)]
+        julia.marks[] = [p for p in d_system.critical_point(julia.parameter)]
 
         julia.rays = []
         pick_orbit!(julia, d_system, options, julia.points[][begin])
