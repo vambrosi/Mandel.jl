@@ -788,10 +788,12 @@ mutable struct MandelView <: View
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
-    marks::Observable{Vector{ComplexF64}}
+    marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
+    mark_line_refs::Vector{Any}
     refresh_rays::Function
+    refresh_marks::Function
 
     coloring_data::ColoringData
     show_rays::Any
@@ -802,7 +804,7 @@ mutable struct MandelView <: View
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
-        marks = ComplexF64[]
+        marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
@@ -816,6 +818,8 @@ mutable struct MandelView <: View
             marks,
             rays,
             Vector{Any}[],
+            Vector{Any}[],
+            () -> nothing,
             () -> nothing,
             coloring_data,
             0,
@@ -834,10 +838,12 @@ mutable struct JuliaView <: View
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
-    marks::Observable{Vector{ComplexF64}}
+    marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
+    mark_line_refs::Vector{Any}
     refresh_rays::Function
+    refresh_marks::Function
     coloring_data::ColoringData
     show_rays::Any
 
@@ -847,7 +853,7 @@ mutable struct JuliaView <: View
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
-        marks = ComplexF64[]
+        marks = [Observable(ComplexF64[]), Observable(ComplexF64[])]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
@@ -862,6 +868,8 @@ mutable struct JuliaView <: View
             marks,
             rays,
             Vector{Any}[],
+            Vector{Any}[],
+            () -> nothing,
             () -> nothing,
             coloring_data,
             show_rays,
@@ -1030,13 +1038,23 @@ function update_view!(view::View, d_system::DynamicalSystem, options::Options)
     update_grid!(view, d_system, corner, step, options)
     notify(view.colors)
     notify(view.points)
-    notify(view.marks)
+    for marks in view.marks
+        notify(marks)
+    end
 
     for ray in view.rays
         notify(ray)
     end
 
     return view
+end
+
+function set_marks!(d_system::DynamicalSystem, julia::JuliaView, options::Options)
+    c = julia.parameter
+    cpts = [z for z in d_system.critical_point(c)]
+    for (marks, crpt) in zip(julia.marks, cpts)
+        marks[] = orbit(d_system.map, crpt, julia.parameter, options.critical_length - 1)
+    end
 end
 
 function pick_parameter!(
@@ -1047,13 +1065,8 @@ function pick_parameter!(
     point,
 )
     julia.parameter = point
-
-    julia.marks[] = orbit(
-        d_system.map,
-        d_system.critical_point(julia.parameter),
-        julia.parameter,
-        options.critical_length - 1,
-    )
+    set_marks!(d_system, julia, options)
+    julia.refresh_marks()
 
     julia.rays = []
     julia.refresh_rays()
@@ -1148,7 +1161,8 @@ function delete_plots!(frame::Frame)
 
     # Clear old listeners (point_vectors, mark_vectors)
     empty!(view.points.listeners)
-    empty!(view.marks.listeners)
+    # empty!(view.marks.listeners) 
+    # TODO: marks and rays
 end
 
 function create_plot!(frame::Frame)
@@ -1184,12 +1198,32 @@ function create_plot!(frame::Frame)
         end,
     )
 
-    mark_vectors = lift(view.marks) do zs
-        xs, ys = to_pixel_space(view, zs)
-        return Point2f.(xs, ys)
-    end
+    view.mark_line_refs = []
+    function draw_crit_orbits()
+        for r in view.mark_line_refs
+            delete!(frame.axis, r)
+        end
+        for marks in view.marks
+            mark_vectors = lift(marks) do zs
+                xs, ys = to_pixel_space(view, zs)
+                return Point2f.(xs, ys)
+            end
 
-    lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
+            lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
+
+            scatter!(
+                frame.axis,
+                mark_vectors,
+                color = (:blue, 1.0),
+                inspector_label = (self, i, p) -> let
+                    z = to_complex_plane(view, p)
+                    "x: $(real(z))\ny: $(imag(z))"
+                end,
+            )
+        end
+    end
+    view.refresh_marks = draw_crit_orbits
+    draw_crit_orbits()
 
     view.line_refs = []
     function rays_callback()
@@ -1217,16 +1251,6 @@ function create_plot!(frame::Frame)
 
     rays_callback()
     view.refresh_rays = rays_callback
-
-    scatter!(
-        frame.axis,
-        mark_vectors,
-        color = (:blue, 1.0),
-        inspector_label = (self, i, p) -> let
-            z = to_complex_plane(view, p)
-            "x: $(real(z))\ny: $(imag(z))"
-        end,
-    )
 
     return frame
 end
@@ -1441,8 +1465,7 @@ function add_buttons!(
     labels = Dict(
         :max_iter => Label(layout[1, button_shift+1], "Maximum\nIterations:"),
         :orbit_len => Label(layout[1, button_shift+3], "Orbit\nLength:"),
-        :critical_length =>
-            Label(layout[1, button_shift+5], "Critical Point\nOrbit Length:"),
+        :critical_length => Label(layout[1, button_shift+5], "Critical\nOrbit Length:"),
         :convergence_radius => Label(layout[1, button_shift+7], "Convergence\nRadius:"),
     )
 
@@ -1521,12 +1544,8 @@ function add_buttons!(
 
     on(inputs[:critical_length].stored_string) do s
         options.critical_length = parse(Int, s)
-        julia.marks[] = orbit(
-            d_system.map,
-            d_system.critical_point(julia.parameter),
-            julia.parameter,
-            options.critical_length - 1,
-        )
+
+        set_marks!(d_system, julia, options)
     end
 
     on(inputs[:convergence_radius].stored_string) do s
@@ -1813,7 +1832,7 @@ struct Viewer
 
         store_schemes!(options, julia_coloring.attractors)
 
-        julia.marks[] = [p for p in d_system.critical_point(julia.parameter)]
+        set_marks!(d_system, julia, options)
 
         julia.rays = []
         pick_orbit!(julia, d_system, options, julia.points[][begin])
