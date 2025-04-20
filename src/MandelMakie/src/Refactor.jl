@@ -690,10 +690,10 @@ end
 
 function escape_time(f, z, c, a, ε, N)
     times = [convergence_time(f, zi, c, a, ε, N) for zi in z]
-    ultimate_index = findmax(map(t -> t[1], times))[2]
-    max_time = times[ultimate_index]
+    ultimate_index = findmin(map(t -> t[1], times))[2]
+    ultimate_escape = times[ultimate_index]
     # return max_iterations + 1, ε, empty_attractor, 0
-    return to_color(max_time..., Val(:depth))
+    return to_color(ultimate_escape..., Val(:depth))
 end
 mod_period(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:mod))
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
