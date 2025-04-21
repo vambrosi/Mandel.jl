@@ -853,7 +853,7 @@ mutable struct JuliaView <: View
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
-        marks = [Observable(ComplexF64[]), Observable(ComplexF64[])]
+        marks = []
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
@@ -1829,6 +1829,7 @@ struct Viewer
             coloring_data = julia_coloring,
             show_rays = show_rays,
         )
+        julia.marks = [Observable(ComplexF64[]) for _ in d_system.critical_point(c)]
 
         store_schemes!(options, julia_coloring.attractors)
 
