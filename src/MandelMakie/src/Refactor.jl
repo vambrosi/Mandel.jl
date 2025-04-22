@@ -1829,7 +1829,10 @@ struct Viewer
             coloring_data = julia_coloring,
             show_rays = show_rays,
         )
-        julia.marks = [Observable(ComplexF64[]) for _ in d_system.critical_point(c)]
+
+        test_crits = d_system.critical_point(c)
+        test_crits = test_crits isa Number ? (test_crits,) : test_crits
+        julia.marks = [Observable(ComplexF64[]) for _ in test_crits]
 
         store_schemes!(options, julia_coloring.attractors)
 
