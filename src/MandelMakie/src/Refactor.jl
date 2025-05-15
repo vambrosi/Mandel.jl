@@ -1142,6 +1142,14 @@ function create_frames!(figure, options, mandel::MandelView, julia)
         left_axis.height = Relative(0.3)
         left_axis.valign = 0.03
         left_axis.halign = 0.03
+    else
+        left_axis.width = nothing
+        left_axis.height = nothing
+        left_axis.valign = :center
+        left_axis.halign = :center
+
+        figure[1, 1][1, 1] = left_axis
+        figure[1, 1][1, 2] = right_axis
     end
 
     for axis in [left_axis, right_axis]
