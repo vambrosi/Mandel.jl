@@ -612,7 +612,7 @@ function get_attractors(f::Function, c::Number; projective::Bool = false, ε::Re
     return a
 end
 
-function rays(func, parameter, show_rays)
+function rays(func, parameter, show_rays, options)
     if show_rays == false
         return []
     end
@@ -621,11 +621,12 @@ function rays(func, parameter, show_rays)
     parameter = convert(ComplexF64, parameter)
     coefficients = coeffs(substitute(f, Dict(c => parameter)), z)
 
-    if show_rays == "auto"
-        periods = unique!([length(a.cycle) for a in get_attractors(func, parameter)])
-        return Rays.auto_rays(coefficients, periods)
+    if show_rays == :auto
+        periods = [options.period]
+        return Rays.auto_rays(coefficients, periods, options.pullbacks)
+    elseif show_rays == :all
+        return Rays.all_periodic(coefficients, options)
     else
-        # list of angles
         return Rays.rays(coefficients, show_rays)
     end
 end
@@ -767,6 +768,8 @@ mutable struct Options
     projective_metrics::Tuple{Bool,Bool}
     coloring_methods::Tuple{Symbol,Symbol}
     coloring_schemes::Vector{ColoringScheme}
+    pullbacks::Int
+    period::Int
 end
 
 mutable struct MandelView <: View
@@ -1046,15 +1049,8 @@ function pick_parameter!(
         options.critical_length - 1,
     )
 
-    new_rays = rays(d_system.map, julia.parameter, julia.show_rays)
-    if length(julia.rays) == length(new_rays)
-        for (ray, new_ray) in zip(julia.rays, new_rays)
-            ray[] = new_ray
-        end
-    else
-        julia.rays = [Observable(ray) for ray in new_rays]
-        julia.refresh_rays()
-    end
+    julia.rays = []
+    julia.refresh_rays()
 
     mandel.points[] = [julia.parameter]
 
@@ -1423,7 +1419,16 @@ function add_frame_events!(
     end
 end
 
-function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
+function add_buttons!(
+    figure,
+    left_frame,
+    right_frame,
+    mandel,
+    julia,
+    d_system,
+    options,
+    show_rays,
+)
     layout = GridLayout(figure[2, 1], tellwidth = false)
     button_shift = options.is_family ? 2 : 0
 
@@ -1461,6 +1466,41 @@ function add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, 
             validator = Float64,
         ),
     )
+
+    if show_rays == :auto || show_rays == :all
+        labels[:pullbacks] = Label(layout[1, button_shift+9], "Pullbacks:")
+        inputs[:pullbacks] = Textbox(
+            layout[1, button_shift+10],
+            width = 60,
+            placeholder = string(options.pullbacks),
+            validator = Int,
+        )
+        labels[:period] = Label(layout[1, button_shift+11], "Max\n Period:")
+        inputs[:period] = Textbox(
+            layout[1, button_shift+12],
+            width = 60,
+            placeholder = string(options.period),
+            validator = Int,
+        )
+        inputs[:rays] = Button(layout[1, button_shift+13], label = "R", halign = :left)
+
+        on(inputs[:pullbacks].stored_string) do s
+            options.pullbacks = parse(Int, s)
+        end
+        on(inputs[:period].stored_string) do s
+            options.period = parse(Int, s)
+        end
+
+        on(inputs[:rays].clicks, priority = 200) do event
+            inputs[:rays].label = "X"
+
+            new_rays = rays(d_system.map, julia.parameter, julia.show_rays, options)
+            julia.rays = [Observable(ray) for ray in new_rays]
+            julia.refresh_rays()
+
+            inputs[:rays].label = "R"
+        end
+    end
 
     on(inputs[:max_iter].stored_string) do s
         options.max_iterations = parse(Int, s)
@@ -1662,9 +1702,10 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
     `false` they are shown side-by-side.
   - `show_rays = false`: Rays can only be computed for polynomials. Only the dynamic \
     rays can be computed as yet. If 'false', no  rays are shown. If a vector of \
-    Rational64 is given, then the orbits of those  rays are displayed. If 'auto' \
-    is given, a reasonable collection of rays are computed and displayed depending \
-    on the polynomial.
+    Rational64 is given, then the orbits of those rays are displayed. If `:all` \
+    is given then a button will be added to compute all the rays up to a period and \
+    pullbacks. If `:auto` is given, then those rays are then filtered by whether they \
+    land at a cut point, and a lamination is printed.
 
 # Coloring Method Options
 
@@ -1736,6 +1777,8 @@ struct Viewer
             projective_metrics,
             coloring_methods,
             ColoringScheme[],
+            0,
+            1,
         )
         figure = Figure(size = (800, 850))
 
@@ -1766,8 +1809,7 @@ struct Viewer
 
         julia.marks[] = [d_system.critical_point(julia.parameter)]
 
-        julia.rays =
-            [Observable(ray) for ray in rays(d_system.map, julia.parameter, show_rays)]
+        julia.rays = []
         pick_orbit!(julia, d_system, options, julia.points[][begin])
 
         left_frame, right_frame = create_frames!(figure, options, mandel, julia)
@@ -1787,8 +1829,16 @@ struct Viewer
         update_view!(julia, d_system, options)
 
         colgap!(content(figure[1, 1]), 10)
-        inputs =
-            add_buttons!(figure, left_frame, right_frame, mandel, julia, d_system, options)
+        inputs = add_buttons!(
+            figure,
+            left_frame,
+            right_frame,
+            mandel,
+            julia,
+            d_system,
+            options,
+            show_rays,
+        )
 
         return new(
             d_system,
