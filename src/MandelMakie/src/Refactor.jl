@@ -1704,7 +1704,7 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
     rays can be computed as yet. If 'false', no  rays are shown. If a vector of \
     Rational64 is given, then the orbits of those rays are displayed. If `:all` \
     is given then a button will be added to compute all the rays up to a period and \
-    pullbacks. If `:auto` is given, then those rays are then filtered by weather they \
+    pullbacks. If `:auto` is given, then those rays are then filtered by whether they \
     land at a cut point, and a lamination is printed.
 
 # Coloring Method Options
