@@ -71,7 +71,6 @@ function lamination_manim(
 
     # Convert to JSON string
     return JSON.json(lamination_dict)
-    return output
 end
 function newton(wrapper::PolynomialWrapper, z::ComplexF64, guess::ComplexF64)
     p = copy(wrapper.polynomial)
@@ -261,10 +260,10 @@ function auto_rays(coefficients::Vector{ComplexF64}, periods, pullbacks::Int64)
     end
 
     println(lamination_manim(w, lamination))
-    relivant_rays = Set(reduce(vcat, lamination, init = []))
+    relevant_rays = Set(reduce(vcat, lamination, init = []))
     # return collect(values(w.stored_psi_values))
 
-    return [w.stored_psi_values[angle] for angle in relivant_rays]
+    return [w.stored_psi_values[angle] for angle in relevant_rays]
 end
 
 function all_periodic(coefficients, options)
