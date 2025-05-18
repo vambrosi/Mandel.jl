@@ -135,7 +135,7 @@ struct DynamicalSystem
             h = (z, c) -> f(z, c)
         end
 
-        return new(extend_family(h), extend_function(critical_point))
+        return new(h, critical_point)
     end
 end
 
@@ -688,7 +688,13 @@ function to_color(
     return attractor.palette[floor(Int, depth)]
 end
 
-escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:depth))
+function escape_time(f, z, c, a, ε, N)
+    times = [convergence_time(f, zi, c, a, ε, N) for zi in z]
+    ultimate_index = findmin(map(t -> t[1], times))[2]
+    ultimate_escape = times[ultimate_index]
+    # return max_iterations + 1, ε, empty_attractor, 0
+    return to_color(ultimate_escape..., Val(:depth))
+end
 mod_period(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:mod))
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
 
@@ -770,6 +776,7 @@ mutable struct Options
     coloring_schemes::Vector{ColoringScheme}
     pullbacks::Int
     period::Int
+    drag_setting::Symbol
 end
 
 mutable struct MandelView <: View
@@ -782,10 +789,12 @@ mutable struct MandelView <: View
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
-    marks::Observable{Vector{ComplexF64}}
+    marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
+    mark_line_refs::Vector{Any}
     refresh_rays::Function
+    refresh_marks::Function
 
     coloring_data::ColoringData
     show_rays::Any
@@ -796,7 +805,7 @@ mutable struct MandelView <: View
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
-        marks = ComplexF64[]
+        marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
@@ -810,6 +819,8 @@ mutable struct MandelView <: View
             marks,
             rays,
             Vector{Any}[],
+            Vector{Any}[],
+            () -> nothing,
             () -> nothing,
             coloring_data,
             0,
@@ -828,10 +839,12 @@ mutable struct JuliaView <: View
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
-    marks::Observable{Vector{ComplexF64}}
+    marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
+    mark_line_refs::Vector{Any}
     refresh_rays::Function
+    refresh_marks::Function
     coloring_data::ColoringData
     show_rays::Any
 
@@ -841,7 +854,7 @@ mutable struct JuliaView <: View
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
-        marks = ComplexF64[]
+        marks = []
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
@@ -856,6 +869,8 @@ mutable struct JuliaView <: View
             marks,
             rays,
             Vector{Any}[],
+            Vector{Any}[],
+            () -> nothing,
             () -> nothing,
             coloring_data,
             show_rays,
@@ -1024,13 +1039,23 @@ function update_view!(view::View, d_system::DynamicalSystem, options::Options)
     update_grid!(view, d_system, corner, step, options)
     notify(view.colors)
     notify(view.points)
-    notify(view.marks)
+    for marks in view.marks
+        notify(marks)
+    end
 
     for ray in view.rays
         notify(ray)
     end
 
     return view
+end
+
+function set_marks!(d_system::DynamicalSystem, julia::JuliaView, options::Options)
+    c = julia.parameter
+    cpts = [z for z in d_system.critical_point(c)]
+    for (marks, crpt) in zip(julia.marks, cpts)
+        marks[] = orbit(d_system.map, crpt, julia.parameter, options.critical_length - 1)
+    end
 end
 
 function pick_parameter!(
@@ -1041,6 +1066,8 @@ function pick_parameter!(
     point,
 )
     julia.parameter = point
+    set_marks!(d_system, julia, options)
+    julia.refresh_marks()
 
     julia.marks[] = orbit(
         d_system.map,
@@ -1048,7 +1075,6 @@ function pick_parameter!(
         julia.parameter,
         options.critical_length - 1,
     )
-
     julia.rays = []
     julia.refresh_rays()
 
@@ -1122,6 +1148,14 @@ function create_frames!(figure, options, mandel::MandelView, julia)
         left_axis.height = Relative(0.3)
         left_axis.valign = 0.03
         left_axis.halign = 0.03
+    else
+        left_axis.width = nothing
+        left_axis.height = nothing
+        left_axis.valign = :center
+        left_axis.halign = :center
+
+        figure[1, 1][1, 1] = left_axis
+        figure[1, 1][1, 2] = right_axis
     end
 
     for axis in [left_axis, right_axis]
@@ -1142,7 +1176,8 @@ function delete_plots!(frame::Frame)
 
     # Clear old listeners (point_vectors, mark_vectors)
     empty!(view.points.listeners)
-    empty!(view.marks.listeners)
+    # empty!(view.marks.listeners) 
+    # TODO: marks and rays
 end
 
 function create_plot!(frame::Frame)
@@ -1178,12 +1213,32 @@ function create_plot!(frame::Frame)
         end,
     )
 
-    mark_vectors = lift(view.marks) do zs
-        xs, ys = to_pixel_space(view, zs)
-        return Point2f.(xs, ys)
-    end
+    view.mark_line_refs = []
+    function draw_crit_orbits()
+        for r in view.mark_line_refs
+            delete!(frame.axis, r)
+        end
+        for marks in view.marks
+            mark_vectors = lift(marks) do zs
+                xs, ys = to_pixel_space(view, zs)
+                return Point2f.(xs, ys)
+            end
 
-    lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
+            lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
+
+            scatter!(
+                frame.axis,
+                mark_vectors,
+                color = (:blue, 1.0),
+                inspector_label = (self, i, p) -> let
+                    z = to_complex_plane(view, p)
+                    "x: $(real(z))\ny: $(imag(z))"
+                end,
+            )
+        end
+    end
+    view.refresh_marks = draw_crit_orbits
+    draw_crit_orbits()
 
     view.line_refs = []
     function rays_callback()
@@ -1211,16 +1266,6 @@ function create_plot!(frame::Frame)
 
     rays_callback()
     view.refresh_rays = rays_callback
-
-    scatter!(
-        frame.axis,
-        mark_vectors,
-        color = (:blue, 1.0),
-        inspector_label = (self, i, p) -> let
-            z = to_complex_plane(view, p)
-            "x: $(real(z))\ny: $(imag(z))"
-        end,
-    )
 
     return frame
 end
@@ -1272,7 +1317,7 @@ function add_frame_events!(
     scene = axis.scene
 
     # Mouse Events
-    dragging = false
+    drag_mode = :notdragging
     dragstart = Point2f(0.0)
     dragend = Point2f(0.0)
 
@@ -1284,6 +1329,17 @@ function add_frame_events!(
     is_topframe = frame == topframe
     z_level = is_topframe ? 10 : 0
 
+    function set_red_point_useing_mouse_position()
+        mp = mouseposition_px(scene)
+        view = frame.view[]
+        point = to_complex_plane(view, to_world_at_start(mp))
+        if view isa MandelView
+            pick_parameter!(julia, view, d_system, options, point)
+        elseif view isa JuliaView
+            pick_orbit!(view, d_system, options, point)
+        end
+    end
+
     on(events(scene).mousebutton) do event
         is_zooming && return Consume(false)
 
@@ -1294,18 +1350,18 @@ function add_frame_events!(
             if event.action == Mouse.press &&
                is_mouseinside(axis) &&
                (is_topframe || !is_mouseinside(topframe.axis))
-                dragging = true
+                drag_mode = :rightclick
                 to_world_at_start = z -> to_world(scene, z)
                 dragstart = to_world_at_start(mp)
 
-            elseif event.action == Mouse.release && dragging
+            elseif event.action == Mouse.release && (drag_mode == :rightclick)
                 dragend = to_world_at_start(mp)
                 view.center +=
                     to_complex_plane(view, dragstart) - to_complex_plane(view, dragend)
                 translate!(scene, 0, 0, z_level)
                 update_view!(view, d_system, options)
                 reset_limits!(axis)
-                dragging = false
+                drag_mode = :notdragging
             end
         end
 
@@ -1333,14 +1389,16 @@ function add_frame_events!(
 
                     change_color!(figure, julia, i, d_system, options)
                     return Consume(true)
+                elseif options.drag_setting == :both ||
+                       options.drag_setting == :dynamic_only && view isa JuliaView
+                    set_red_point_useing_mouse_position()
+                    drag_mode = :leftclick
+                else
+                    set_red_point_useing_mouse_position()
                 end
-
-                point = to_complex_plane(view, to_world_at_start(mp))
-                if view isa MandelView
-                    pick_parameter!(julia, view, d_system, options, point)
-                elseif view isa JuliaView
-                    pick_orbit!(view, d_system, options, point)
-                end
+            elseif event.action == Mouse.release && drag_mode == :leftclick
+                set_red_point_useing_mouse_position()
+                drag_mode = :notdragging
             end
         end
 
@@ -1348,9 +1406,12 @@ function add_frame_events!(
     end
 
     on(events(scene).mouseposition) do event
-        if dragging
+        if (drag_mode == :rightclick)
+            # TODO: figure out differences between mouseposition mouseposition_px because we use both in a way that I believe causes issues.
             mp = mouseposition(scene)
             translate!(scene, mp - dragstart..., z_level)
+        elseif (drag_mode == :leftclick)
+            set_red_point_useing_mouse_position()
         end
     end
 
@@ -1363,9 +1424,6 @@ function add_frame_events!(
         end
     end
 
-    frame.events[:dragging] = dragging
-    frame.events[:dragstart] = dragstart
-    frame.events[:dragend] = dragstart
     frame.events[:is_zooming] = is_zooming
     frame.events[:zooming] = zooming
 
@@ -1435,8 +1493,7 @@ function add_buttons!(
     labels = Dict(
         :max_iter => Label(layout[1, button_shift+1], "Maximum\nIterations:"),
         :orbit_len => Label(layout[1, button_shift+3], "Orbit\nLength:"),
-        :critical_length =>
-            Label(layout[1, button_shift+5], "Critical Point\nOrbit Length:"),
+        :critical_length => Label(layout[1, button_shift+5], "Critical\nOrbit Length:"),
         :convergence_radius => Label(layout[1, button_shift+7], "Convergence\nRadius:"),
     )
 
@@ -1515,12 +1572,8 @@ function add_buttons!(
 
     on(inputs[:critical_length].stored_string) do s
         options.critical_length = parse(Int, s)
-        julia.marks[] = orbit(
-            d_system.map,
-            d_system.critical_point(julia.parameter),
-            julia.parameter,
-            options.critical_length - 1,
-        )
+
+        set_marks!(d_system, julia, options)
     end
 
     on(inputs[:convergence_radius].stored_string) do s
@@ -1698,14 +1751,19 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
   - `julia_diameter = 4.0`: Initial diameter of the Julia plot.
   - `grid_width = 800`: Width (and height) of the grid of complex numbers used to plot \
     sets.
-  - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if \
+  - `compact_view = false`: If 'true' one of the plots is show as an inset plot, if \
     `false` they are shown side-by-side.
   - `show_rays = false`: Rays can only be computed for polynomials. Only the dynamic \
-    rays can be computed as yet. If 'false', no  rays are shown. If a vector of \
+    rays can be computed as yet. If `false`, no  rays are shown. If a vector of \
     Rational64 is given, then the orbits of those rays are displayed. If `:all` \
     is given then a button will be added to compute all the rays up to a period and \
     pullbacks. If `:auto` is given, then those rays are then filtered by whether they \
     land at a cut point, and a lamination is printed.
+  - `left_click_drag = :dynamic_only`: By default, in the dynamic plain, the red \
+    point will be continuously updated to the mouse postion if the left button \
+    remains pressed. This may be undesiorable for performace reasons. Set to `:neither` \
+    to disable. Alternately, it may be tolerable to enable this in both plains with \
+    `:both`.
 
 # Coloring Method Options
 
@@ -1757,6 +1815,7 @@ struct Viewer
         coloring_method = :escape_time,
         projective_metric = false,
         show_rays = false,
+        left_click_drag = :dynamic_only,
     )
         # Put options in standard form
         projective_metrics = make_tuple(projective_metric)
@@ -1779,6 +1838,7 @@ struct Viewer
             ColoringScheme[],
             0,
             1,
+            left_click_drag,
         )
         figure = Figure(size = (800, 850))
 
@@ -1805,9 +1865,13 @@ struct Viewer
             show_rays = show_rays,
         )
 
+        test_crits = d_system.critical_point(c)
+        test_crits = test_crits isa Number ? (test_crits,) : test_crits
+        julia.marks = [Observable(ComplexF64[]) for _ in test_crits]
+
         store_schemes!(options, julia_coloring.attractors)
 
-        julia.marks[] = [d_system.critical_point(julia.parameter)]
+        set_marks!(d_system, julia, options)
 
         julia.rays = []
         pick_orbit!(julia, d_system, options, julia.points[][begin])
