@@ -1069,6 +1069,13 @@ function pick_parameter!(
     set_marks!(d_system, julia, options)
     julia.refresh_marks()
 
+    julia.marks[] = orbit(
+        d_system.map,
+        d_system.critical_point(julia.parameter),
+        julia.parameter,
+        options.critical_length - 1,
+    )
+
     julia.rays = []
     julia.refresh_rays()
 
@@ -1170,7 +1177,7 @@ function delete_plots!(frame::Frame)
 
     # Clear old listeners (point_vectors, mark_vectors)
     empty!(view.points.listeners)
-    # empty!(view.marks.listeners) 
+    # empty!(view.marks.listeners)
     # TODO: marks and rays
 end
 
@@ -1751,7 +1758,7 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
     rays can be computed as yet. If 'false', no  rays are shown. If a vector of \
     Rational64 is given, then the orbits of those rays are displayed. If `:all` \
     is given then a button will be added to compute all the rays up to a period and \
-    pullbacks. If :auto is given, then those rays are then filtered by weather they
+    pullbacks. If `:auto` is given, then those rays are then filtered by whether they \
     land at a cut point, and a lamination is printed.
   - `left_click_drag = :dynamic_only`: By default, in the dynamic plain, the red \
     point will be continuously updated to the mouse postion if the left button\
