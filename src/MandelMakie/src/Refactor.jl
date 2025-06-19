@@ -1069,13 +1069,6 @@ function pick_parameter!(
     set_marks!(d_system, julia, options)
     julia.refresh_marks()
 
-    julia.marks[] = orbit(
-        d_system.map,
-        d_system.critical_point(julia.parameter),
-        julia.parameter,
-        options.critical_length - 1,
-    )
-
     julia.rays = []
     julia.refresh_rays()
 
