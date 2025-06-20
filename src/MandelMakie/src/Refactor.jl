@@ -1323,7 +1323,7 @@ function add_frame_events!(
     is_topframe = frame == topframe
     z_level = is_topframe ? 10 : 0
 
-    function set_red_point_useing_mouse_position()
+    function set_red_point_using_mouse_position()
         mp = mouseposition_px(scene)
         view = frame.view[]
         point = to_complex_plane(view, to_world_at_start(mp))
@@ -1385,13 +1385,13 @@ function add_frame_events!(
                     return Consume(true)
                 elseif options.drag_setting == :both ||
                        options.drag_setting == :dynamic_only && view isa JuliaView
-                    set_red_point_useing_mouse_position()
+                    set_red_point_using_mouse_position()
                     drag_mode = :leftclick
                 else
-                    set_red_point_useing_mouse_position()
+                    set_red_point_using_mouse_position()
                 end
             elseif event.action == Mouse.release && drag_mode == :leftclick
-                set_red_point_useing_mouse_position()
+                set_red_point_using_mouse_position()
                 drag_mode = :notdragging
             end
         end
@@ -1405,7 +1405,7 @@ function add_frame_events!(
             mp = mouseposition(scene)
             translate!(scene, mp - dragstart..., z_level)
         elseif (drag_mode == :leftclick)
-            set_red_point_useing_mouse_position()
+            set_red_point_using_mouse_position()
         end
     end
 
