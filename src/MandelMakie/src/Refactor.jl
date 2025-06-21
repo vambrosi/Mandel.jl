@@ -60,19 +60,27 @@ function extend_function(f::Function)
     frac = simplify(f(u / v))
     value = Symbolics.value(frac)
 
-    if value isa Number
-        h = let
-            pt = convert(Point, value)
-            _ -> pt
-        end
-    else
-        num, den = Symbolics.arguments(value)
-        fu = build_function(num, u, v, expression = Val{false})
-        fv = build_function(den, u, v, expression = Val{false})
+    function get_h(value)
+        if value isa Number
+            h = let
+                pt = convert(Point, value)
+                _ -> pt
+            end
+        else
+            num, den = Symbolics.arguments(value)
+            fu = build_function(num, u, v, expression = Val{false})
+            fv = build_function(den, u, v, expression = Val{false})
 
-        h = z -> normalize(Point(fu(z...), fv(z...)))
+            h = z -> normalize(Point(fu(z...), fv(z...)))
+        end
+        return h
     end
 
+    if value isa Tuple
+        h = (z) -> tuple([get_h(v)(z) for v in value]...)
+    else
+        h = get_h(value)
+    end
     g(z) = f(z)
     g(z::Point) = h(z)
     return g
@@ -135,7 +143,7 @@ struct DynamicalSystem
             h = (z, c) -> f(z, c)
         end
 
-        return new(h, critical_point)
+        return new(extend_family(h), extend_function(critical_point))
     end
 end
 
