@@ -697,7 +697,11 @@ function to_color(
 end
 
 function escape_time(f, z, c, a, ε, N)
-    times = [convergence_time(f, zi, c, a, ε, N) for zi in z]
+    if z isa Tuple
+        times = [convergence_time(f, zi, c, a, ε, N) for zi in z]
+    else
+        times = [convergence_time(f, z, c, a, ε, N)]
+    end
     ultimate_index = findmin(map(t -> t[1], times))[2]
     ultimate_escape = times[ultimate_index]
     # return max_iterations + 1, ε, empty_attractor, 0
