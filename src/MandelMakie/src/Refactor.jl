@@ -137,6 +137,14 @@ struct DynamicalSystem
     critical_point::Function
 
     function DynamicalSystem(f::Function, critical_point::Function)
+        result = critical_point(0.0im)
+        if !(result isa ComplexF64 || (result isa Tuple && all(x -> x isa ComplexF64, result)))
+            error(
+                "The critical point function must return ComplexF64 or a tuple of ComplexF64 values.\n" *
+                "Got result of type $(typeof(result))"
+            )
+        end
+
         if hasmethod(f, ComplexF64) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
             h = (z, c) -> f(z)
         else
@@ -149,6 +157,15 @@ end
 
 function DynamicalSystem(f::Function, c::Number)
     c = convert(ComplexF64, c)
+    g = let c = c
+        _ -> c
+    end
+
+    return DynamicalSystem(f, g)
+end
+
+function DynamicalSystem(f::Function, c::Tuple)
+    c = (convert.(ComplexF64, c)...,)
     g = let c = c
         _ -> c
     end
