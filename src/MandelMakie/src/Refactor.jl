@@ -139,7 +139,7 @@ struct DynamicalSystem
     function DynamicalSystem(f::Function, critical_point::Function)
         result = critical_point(0.0im)
         if !(result isa ComplexF64 || (result isa Tuple && all(x -> x isa ComplexF64, result)))
-            error(
+            throw(
                 "The critical point function must return ComplexF64 or a tuple of ComplexF64 values.\n" *
                 "Got result of type $(typeof(result))"
             )
@@ -165,7 +165,7 @@ function DynamicalSystem(f::Function, c::Number)
 end
 
 function DynamicalSystem(f::Function, c::Tuple)
-    c = (convert.(ComplexF64, c)...,)
+    c = ComplexF64.(c)
     g = let c = c
         _ -> c
     end
@@ -357,6 +357,29 @@ function is_nearby(z::T, cycle::Vector{T}, ε::Real) where {T<:PointLike}
     return false, ε, 0
 end
 
+
+function convergence_time(
+    f::Function,
+    z::Tuple{Vararg{T}},
+    c::T,
+    attractors::Vector{Attractor{T}},
+    ε::Float64,
+    max_iterations::Int,
+) where {T<:PointLike}
+    for iteration in 0:max_iterations
+        for attractor in attractors
+            for zi in z
+                near, d, shift = is_nearby(zi, attractor.cycle, ε)
+                near && (return iteration, d, attractor, shift)
+            end
+        end
+
+        z = f.(z, Ref(c))
+    end
+
+    return max_iterations + 1, ε, empty_attractor, 0
+end
+
 function convergence_time(
     f::Function,
     z::T,
@@ -365,16 +388,7 @@ function convergence_time(
     ε::Float64,
     max_iterations::Int,
 ) where {T<:PointLike}
-    for iteration in 0:max_iterations
-        for attractor in attractors
-            near, d, shift = is_nearby(z, attractor.cycle, ε)
-            near && (return iteration, d, attractor, shift)
-        end
-
-        z = f(z, c)
-    end
-
-    return max_iterations + 1, ε, empty_attractor, 0
+    return convergence_time(f,tuple(z),c,attractors,ε,max_iterations)
 end
 
 struct CloseBy
@@ -385,17 +399,27 @@ end
 
 const MaybeCloseBy = Union{Nothing,CloseBy}
 
-function period_multiple_apart(f, z, c, ε, max_iterations)
+function period_multiple_apart(f, z::Tuple, c, ε, max_iterations)
     slow = fast = z
 
     for n in 1:max_iterations
-        slow = f(slow, c)
-        fast = f(f(fast, c), c)
+        slow = f.(slow, Ref(c))
+        fast = f.(f.(fast, Ref(c)), Ref(c))
 
-        distance(slow, fast) <= ε && return CloseBy(n, slow, fast)
+        close = distance.(slow, fast) .<= ε
+        if any(close)
+            index = findall(close)[1]
+            return (CloseBy(n, slow[index], fast[findall(close)[1]]),index)
+        end
     end
 
     return nothing
+end
+
+function period_multiple_apart(f, z, c, ε, max_iterations)
+    ret = period_multiple_apart(f, tuple(z), c, ε, max_iterations)
+    isnothing(ret) && return nothing
+    return ret[1]
 end
 
 function iterate_until_close(f, z, w, c, ε, max_iterations)
@@ -426,19 +450,25 @@ end
 
 const MaybeOrbitData = Union{Nothing,OrbitData}
 
-function multiplier(f, z0, c, _, ε, max_iterations)
-    points = period_multiple_apart(f, z0, c, ε, max_iterations)
-    isnothing(points) && return nothing
+
+function multiplier(f, z0::Tuple, c, _, ε, max_iterations)
+    ret = period_multiple_apart(f, z0, c, ε, max_iterations)
+    isnothing(ret) && return nothing
+    (points,index) = ret
 
     points = iterate_until_close(f, points.z, points.w, c, ε, max_iterations)
     isnothing(points) && return nothing
 
     period = points.iterations
-    points = iterate_until_close(f, z0, points.w, c, ε, max_iterations)
+    points = iterate_until_close(f, z0[index], points.w, c, ε, max_iterations)
     isnothing(points) && return nothing
 
     preperiod = points.iterations
     return OrbitData(preperiod, period)
+end
+
+function multiplier(f, z0::PointLike, c, _, ε, max_iterations)
+    return multiplier(f, tuple(z0), c, nothing, ε, max_iterations)
 end
 
 function attractor_index(z, julia, d_system, options)
@@ -713,17 +743,7 @@ function to_color(
     return attractor.palette[floor(Int, depth)]
 end
 
-function escape_time(f, z, c, a, ε, N)
-    if z isa Tuple
-        times = [convergence_time(f, zi, c, a, ε, N) for zi in z]
-    else
-        times = [convergence_time(f, z, c, a, ε, N)]
-    end
-    ultimate_index = findmin(map(t -> t[1], times))[2]
-    ultimate_escape = times[ultimate_index]
-    # return max_iterations + 1, ε, empty_attractor, 0
-    return to_color(ultimate_escape..., Val(:depth))
-end
+escape_time(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:depth))
 mod_period(f, z, c, a, ε, N) = to_color(convergence_time(f, z, c, a, ε, N)..., Val(:mod))
 convergence_color(f, z, c, a, ε, N) = to_color(multiplier(f, z, c, a, ε, N))
 
