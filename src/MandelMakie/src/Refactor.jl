@@ -56,26 +56,39 @@ function distance(pt1::Point, pt2::Point)
 end
 
 function extend_function(f::Function)
-    @variables u, v
-    frac = simplify(f(u / v))
-    value = Symbolics.value(frac)
-
-    if value isa Number
-        h = let
-            pt = convert(Point, value)
-            _ -> pt
-        end
+    # Makes sure function returns a vector
+    if f(0.0im) isa Vector
+        f_vector = z -> f(z)
     else
-        num, den = Symbolics.arguments(value)
-        fu = build_function(num, u, v, expression = Val{false})
-        fv = build_function(den, u, v, expression = Val{false})
-
-        h = z -> normalize(Point(fu(z...), fv(z...)))
+        f_vector = z -> [f(z)]
     end
 
-    g(z) = f(z)
-    g(z::Point) = h(z)
-    return g
+    @variables u, v
+    fractions = simplify.(f_vector(u / v))
+    values = Symbolics.value.(fractions)
+
+    # List of coordinate functions of the extended f from CP to CP x ... x CP
+    functions = []
+
+    for value in values
+        if value isa Number
+            # If expressions is a constant, push a constant function
+            push!(functions, let
+                pt = convert(Point, value)
+                _ -> pt
+            end)
+        else
+            num, den = Symbolics.arguments(value)
+            fu = build_function(num, u, v, expression = Val{false})
+            fv = build_function(den, u, v, expression = Val{false})
+
+            push!(functions, z -> normalize(Point(fu(z[1], z[2]), fv(z[1], z[2]))))
+        end
+    end
+
+    f_extended(z) = f_vector(z)
+    f_extended(z::Point) = [g(z) for g in functions]
+    return f_extended
 end
 
 function extend_family(f::Function)
@@ -101,7 +114,7 @@ function extend_family(f::Function)
     df_∞0 = build_function(df_symb_∞0, u, a, expression = Val{false})
     df_∞∞ = build_function(df_symb_∞∞, u, a, expression = Val{false})
 
-    function g(orbit::Vector{ComplexF64}, c::ComplexF64)
+    function g(orbit::Vector{ComplexF64}, c::ComplexF64, ::Val{:diff})
         n = length(orbit)
         λ = 1
 
@@ -129,6 +142,14 @@ struct DynamicalSystem
     critical_point::Function
 
     function DynamicalSystem(f::Function, critical_point::Function)
+        result = critical_point(0.0im)
+        if !(result isa ComplexF64 || result isa Vector{ComplexF64})
+            throw(
+                "The critical point function must return a ComplexF64 or a Vector{ComplexF64}.\n" *
+                "Got result of type $(typeof(result))",
+            )
+        end
+
         if hasmethod(f, ComplexF64) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
             h = (z, c) -> f(z)
         else
@@ -142,7 +163,7 @@ end
 function DynamicalSystem(f::Function, c::Number)
     c = convert(ComplexF64, c)
     g = let c = c
-        _ -> c
+        _ -> [c]
     end
 
     return DynamicalSystem(f, g)
@@ -334,22 +355,39 @@ end
 
 function convergence_time(
     f::Function,
+    z::Vector{T},
+    c::T,
+    attractors::Vector{Attractor{T}},
+    ε::Float64,
+    max_iterations::Int,
+) where {T<:PointLike}
+    z = copy(z)
+
+    for iteration in 0:max_iterations
+        for attractor in attractors
+            for zi in z
+                near, d, shift = is_nearby(zi, attractor.cycle, ε)
+                near && (return iteration, d, attractor, shift)
+            end
+        end
+
+        for i in eachindex(z)
+            z[i] = f(z[i], c)
+        end
+    end
+
+    return max_iterations + 1, ε, empty_attractor, 0
+end
+
+function convergence_time(
+    f::Function,
     z::T,
     c::T,
     attractors::Vector{Attractor{T}},
     ε::Float64,
     max_iterations::Int,
 ) where {T<:PointLike}
-    for iteration in 0:max_iterations
-        for attractor in attractors
-            near, d, shift = is_nearby(z, attractor.cycle, ε)
-            near && (return iteration, d, attractor, shift)
-        end
-
-        z = f(z, c)
-    end
-
-    return max_iterations + 1, ε, empty_attractor, 0
+    return convergence_time(f, [z], c, attractors, ε, max_iterations)
 end
 
 struct CloseBy
@@ -359,6 +397,26 @@ struct CloseBy
 end
 
 const MaybeCloseBy = Union{Nothing,CloseBy}
+
+function period_multiple_apart(f, z::Vector{T}, c, ε, max_iterations) where {T<:PointLike}
+    slow = copy(z)
+    fast = copy(z)
+
+    for n in 1:max_iterations
+        for i in eachindex(slow)
+            slow[i] = f(slow[i], c)
+            fast[i] = f(f(fast[i], c), c)
+        end
+
+        if any(distance(s, f) <= ε for (s, f) in zip(slow, fast))
+            close = [distance(s, f) <= ε for (s, f) in zip(slow, fast)]
+            index = findall(close)[1]
+            return CloseBy(n, slow[index], fast[index]), index
+        end
+    end
+
+    return nothing
+end
 
 function period_multiple_apart(f, z, c, ε, max_iterations)
     slow = fast = z
@@ -401,19 +459,24 @@ end
 
 const MaybeOrbitData = Union{Nothing,OrbitData}
 
-function multiplier(f, z0, c, _, ε, max_iterations)
-    points = period_multiple_apart(f, z0, c, ε, max_iterations)
-    isnothing(points) && return nothing
+function multiplier(f, z0::Vector{T}, c, _, ε, max_iterations) where {T<:PointLike}
+    result = period_multiple_apart(f, z0, c, ε, max_iterations)
+    isnothing(result) && return nothing
 
+    (points, index) = result
     points = iterate_until_close(f, points.z, points.w, c, ε, max_iterations)
     isnothing(points) && return nothing
 
     period = points.iterations
-    points = iterate_until_close(f, z0, points.w, c, ε, max_iterations)
+    points = iterate_until_close(f, z0[index], points.w, c, ε, max_iterations)
     isnothing(points) && return nothing
 
     preperiod = points.iterations
     return OrbitData(preperiod, period)
+end
+
+function multiplier(f, z0::T, c, _, ε, max_iterations) where {T<:PointLike}
+    return multiplier(f, [z0], c, nothing, ε, max_iterations)
 end
 
 function attractor_index(z, julia, d_system, options)
@@ -542,7 +605,7 @@ function get_attractor(
     end
 
     plane_orbit = convert(Vector{ComplexF64}, orbit)
-    multiplier = abs(g(plane_orbit, c))
+    multiplier = abs(g(plane_orbit, c, Val(:diff)))
 
     projective || (orbit = plane_orbit)
 
@@ -599,7 +662,7 @@ function get_attractors(f::Function, c::Number; projective::Bool = false, ε::Re
     end
 
     plane_orbits = convert.(Vector{ComplexF64}, orbits)
-    multipliers = [abs(g(o, c)) for o in plane_orbits]
+    multipliers = [abs(g(o, c, Val(:diff))) for o in plane_orbits]
 
     projective || (orbits = plane_orbits)
 
@@ -770,6 +833,7 @@ mutable struct Options
     coloring_schemes::Vector{ColoringScheme}
     pullbacks::Int
     period::Int
+    drag_setting::Symbol
 end
 
 mutable struct MandelView <: View
@@ -782,7 +846,7 @@ mutable struct MandelView <: View
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
-    marks::Observable{Vector{ComplexF64}}
+    marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
     refresh_rays::Function
@@ -796,7 +860,7 @@ mutable struct MandelView <: View
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
-        marks = ComplexF64[]
+        marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
@@ -828,7 +892,7 @@ mutable struct JuliaView <: View
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
-    marks::Observable{Vector{ComplexF64}}
+    marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
     line_refs::Vector{Any}
     refresh_rays::Function
@@ -841,7 +905,7 @@ mutable struct JuliaView <: View
 
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
-        marks = ComplexF64[]
+        marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
@@ -1024,13 +1088,25 @@ function update_view!(view::View, d_system::DynamicalSystem, options::Options)
     update_grid!(view, d_system, corner, step, options)
     notify(view.colors)
     notify(view.points)
-    notify(view.marks)
+
+    for marks in view.marks
+        notify(marks)
+    end
 
     for ray in view.rays
         notify(ray)
     end
 
     return view
+end
+
+function set_marks!(d_system::DynamicalSystem, julia::JuliaView, options::Options)
+    c = julia.parameter
+    zs = d_system.critical_point(c)
+
+    for (z, z_orbit) in zip(zs, julia.marks)
+        z_orbit[] = orbit(d_system.map, z, c, options.critical_length - 1)
+    end
 end
 
 function pick_parameter!(
@@ -1041,13 +1117,7 @@ function pick_parameter!(
     point,
 )
     julia.parameter = point
-
-    julia.marks[] = orbit(
-        d_system.map,
-        d_system.critical_point(julia.parameter),
-        julia.parameter,
-        options.critical_length - 1,
-    )
+    set_marks!(d_system, julia, options)
 
     julia.rays = []
     julia.refresh_rays()
@@ -1122,6 +1192,14 @@ function create_frames!(figure, options, mandel::MandelView, julia)
         left_axis.height = Relative(0.3)
         left_axis.valign = 0.03
         left_axis.halign = 0.03
+    else
+        left_axis.width = nothing
+        left_axis.height = nothing
+        left_axis.valign = :center
+        left_axis.halign = :center
+
+        figure[1, 1][1, 1] = left_axis
+        figure[1, 1][1, 2] = right_axis
     end
 
     for axis in [left_axis, right_axis]
@@ -1142,7 +1220,11 @@ function delete_plots!(frame::Frame)
 
     # Clear old listeners (point_vectors, mark_vectors)
     empty!(view.points.listeners)
-    empty!(view.marks.listeners)
+    for marks in view.marks
+        empty!(marks.listeners)
+    end
+    
+    # TODO: rays
 end
 
 function create_plot!(frame::Frame)
@@ -1178,12 +1260,24 @@ function create_plot!(frame::Frame)
         end,
     )
 
-    mark_vectors = lift(view.marks) do zs
-        xs, ys = to_pixel_space(view, zs)
-        return Point2f.(xs, ys)
+    for orbit in view.marks
+        orbit_vectors = lift(orbit) do zs
+            xs, ys = to_pixel_space(view, zs)
+            return Point2f.(xs, ys)
+        end
+
+        lines!(frame.axis, orbit_vectors, inspectable = false)
+        scatter!(
+            frame.axis,
+            orbit_vectors,
+            inspector_label = (self, i, p) -> let
+                z = to_complex_plane(view, p)
+                "x: $(real(z))\ny: $(imag(z))"
+            end,
+        )
     end
 
-    lines!(frame.axis, mark_vectors, color = (:blue, 0.5), inspectable = false)
+    DataInspector(frame.axis)
 
     view.line_refs = []
     function rays_callback()
@@ -1211,16 +1305,6 @@ function create_plot!(frame::Frame)
 
     rays_callback()
     view.refresh_rays = rays_callback
-
-    scatter!(
-        frame.axis,
-        mark_vectors,
-        color = (:blue, 1.0),
-        inspector_label = (self, i, p) -> let
-            z = to_complex_plane(view, p)
-            "x: $(real(z))\ny: $(imag(z))"
-        end,
-    )
 
     return frame
 end
@@ -1272,7 +1356,7 @@ function add_frame_events!(
     scene = axis.scene
 
     # Mouse Events
-    dragging = false
+    drag_mode = :notdragging
     dragstart = Point2f(0.0)
     dragend = Point2f(0.0)
 
@@ -1284,6 +1368,17 @@ function add_frame_events!(
     is_topframe = frame == topframe
     z_level = is_topframe ? 10 : 0
 
+    function set_red_point_using_mouse_position()
+        mp = mouseposition_px(scene)
+        view = frame.view[]
+        point = to_complex_plane(view, to_world_at_start(mp))
+        if view isa MandelView
+            pick_parameter!(julia, view, d_system, options, point)
+        elseif view isa JuliaView
+            pick_orbit!(view, d_system, options, point)
+        end
+    end
+
     on(events(scene).mousebutton) do event
         is_zooming && return Consume(false)
 
@@ -1294,18 +1389,18 @@ function add_frame_events!(
             if event.action == Mouse.press &&
                is_mouseinside(axis) &&
                (is_topframe || !is_mouseinside(topframe.axis))
-                dragging = true
+                drag_mode = :rightclick
                 to_world_at_start = z -> to_world(scene, z)
                 dragstart = to_world_at_start(mp)
 
-            elseif event.action == Mouse.release && dragging
+            elseif event.action == Mouse.release && (drag_mode == :rightclick)
                 dragend = to_world_at_start(mp)
                 view.center +=
                     to_complex_plane(view, dragstart) - to_complex_plane(view, dragend)
                 translate!(scene, 0, 0, z_level)
                 update_view!(view, d_system, options)
                 reset_limits!(axis)
-                dragging = false
+                drag_mode = :notdragging
             end
         end
 
@@ -1333,14 +1428,16 @@ function add_frame_events!(
 
                     change_color!(figure, julia, i, d_system, options)
                     return Consume(true)
+                elseif options.drag_setting == :both ||
+                       options.drag_setting == :dynamic_only && view isa JuliaView
+                    set_red_point_using_mouse_position()
+                    drag_mode = :leftclick
+                else
+                    set_red_point_using_mouse_position()
                 end
-
-                point = to_complex_plane(view, to_world_at_start(mp))
-                if view isa MandelView
-                    pick_parameter!(julia, view, d_system, options, point)
-                elseif view isa JuliaView
-                    pick_orbit!(view, d_system, options, point)
-                end
+            elseif event.action == Mouse.release && drag_mode == :leftclick
+                set_red_point_using_mouse_position()
+                drag_mode = :notdragging
             end
         end
 
@@ -1348,9 +1445,12 @@ function add_frame_events!(
     end
 
     on(events(scene).mouseposition) do event
-        if dragging
+        if (drag_mode == :rightclick)
+            # TODO: figure out differences between mouseposition mouseposition_px because we use both in a way that I believe causes issues.
             mp = mouseposition(scene)
             translate!(scene, mp - dragstart..., z_level)
+        elseif (drag_mode == :leftclick)
+            set_red_point_using_mouse_position()
         end
     end
 
@@ -1363,9 +1463,6 @@ function add_frame_events!(
         end
     end
 
-    frame.events[:dragging] = dragging
-    frame.events[:dragstart] = dragstart
-    frame.events[:dragend] = dragstart
     frame.events[:is_zooming] = is_zooming
     frame.events[:zooming] = zooming
 
@@ -1435,8 +1532,7 @@ function add_buttons!(
     labels = Dict(
         :max_iter => Label(layout[1, button_shift+1], "Maximum\nIterations:"),
         :orbit_len => Label(layout[1, button_shift+3], "Orbit\nLength:"),
-        :critical_length =>
-            Label(layout[1, button_shift+5], "Critical Point\nOrbit Length:"),
+        :critical_length => Label(layout[1, button_shift+5], "Critical\nOrbit Length:"),
         :convergence_radius => Label(layout[1, button_shift+7], "Convergence\nRadius:"),
     )
 
@@ -1515,12 +1611,8 @@ function add_buttons!(
 
     on(inputs[:critical_length].stored_string) do s
         options.critical_length = parse(Int, s)
-        julia.marks[] = orbit(
-            d_system.map,
-            d_system.critical_point(julia.parameter),
-            julia.parameter,
-            options.critical_length - 1,
-        )
+
+        set_marks!(d_system, julia, options)
     end
 
     on(inputs[:convergence_radius].stored_string) do s
@@ -1706,6 +1798,11 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
     is given then a button will be added to compute all the rays up to a period and \
     pullbacks. If `:auto` is given, then those rays are then filtered by whether they \
     land at a cut point, and a lamination is printed.
+  - `left_click_drag = :dynamic_only`: By default, in the dynamic plain, the red \
+    point will be continuously updated to the mouse postion if the left button\
+    remains pressed. This may be undesiorable for performace reasons. Set to `:neither`\
+    to disable. Alternately, it may be tolerable to enable this in both plains with\
+    `:both`.
 
 # Coloring Method Options
 
@@ -1757,6 +1854,7 @@ struct Viewer
         coloring_method = :escape_time,
         projective_metric = false,
         show_rays = false,
+        left_click_drag = :dynamic_only,
     )
         # Put options in standard form
         projective_metrics = make_tuple(projective_metric)
@@ -1779,6 +1877,7 @@ struct Viewer
             ColoringScheme[],
             0,
             1,
+            left_click_drag,
         )
         figure = Figure(size = (800, 850))
 
@@ -1805,9 +1904,10 @@ struct Viewer
             show_rays = show_rays,
         )
 
-        store_schemes!(options, julia_coloring.attractors)
+        critical_points = d_system.critical_point(c)
+        julia.marks = [Observable([c]) for c in critical_points]
 
-        julia.marks[] = [d_system.critical_point(julia.parameter)]
+        store_schemes!(options, julia_coloring.attractors)
 
         julia.rays = []
         pick_orbit!(julia, d_system, options, julia.points[][begin])
@@ -1950,6 +2050,18 @@ function change_color!(figure, julia, i, d_system, options)
         end
 
         return Consume(true)
+    end
+
+    return nothing
+end
+
+function update_viewer!(viewer::Viewer, which::Symbol)
+    if which == :both || which == :julia
+        update_view!(viewer.julia, viewer.d_system, viewer.options)
+    end
+
+    if viewer.options.is_family && (which == :both || which == :mandel)
+        update_view!(viewer.mandel, viewer.d_system, viewer.options)
     end
 
     return nothing

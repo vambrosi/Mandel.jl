@@ -1,6 +1,6 @@
 name = "MandelMakie"
 uuid = "e18c8c28-cd4b-4c7c-875d-43a19c5cccb0"
-authors = ["vambrosi <vambrosi@indiana.edu>"]
+authors = ["Vinicius Ambrosi <viniciusambrosi@gmail.com>"]
 version = "0.1.0"
 
 [deps]
