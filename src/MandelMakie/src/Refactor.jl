@@ -56,34 +56,39 @@ function distance(pt1::Point, pt2::Point)
 end
 
 function extend_function(f::Function)
-    @variables u, v
-    frac = simplify(f(u / v))
-    value = Symbolics.value(frac)
+    # Makes sure function returns a vector
+    if f(0.0im) isa Vector
+        f_vector = z -> f(z)
+    else
+        f_vector = z -> [f(z)]
+    end
 
-    function get_h(value)
+    @variables u, v
+    fractions = simplify.(f_vector(u / v))
+    values = Symbolics.value.(fractions)
+
+    # List of coordinate functions of the extended f from CP to CP x ... x CP
+    functions = []
+
+    for value in values
         if value isa Number
-            h = let
+            # If expressions is a constant, push a constant function
+            push!(functions, let
                 pt = convert(Point, value)
                 _ -> pt
-            end
+            end)
         else
             num, den = Symbolics.arguments(value)
             fu = build_function(num, u, v, expression = Val{false})
             fv = build_function(den, u, v, expression = Val{false})
 
-            h = z -> normalize(Point(fu(z...), fv(z...)))
+            push!(functions, z -> normalize(Point(fu(z[1], z[2]), fv(z[1], z[2]))))
         end
-        return h
     end
 
-    if value isa Tuple
-        h = (z) -> tuple([get_h(v)(z) for v in value]...)
-    else
-        h = get_h(value)
-    end
-    g(z) = f(z)
-    g(z::Point) = h(z)
-    return g
+    f_extended(z) = f_vector(z)
+    f_extended(z::Point) = [g(z) for g in functions]
+    return f_extended
 end
 
 function extend_family(f::Function)
@@ -109,7 +114,7 @@ function extend_family(f::Function)
     df_∞0 = build_function(df_symb_∞0, u, a, expression = Val{false})
     df_∞∞ = build_function(df_symb_∞∞, u, a, expression = Val{false})
 
-    function g(orbit::Vector{ComplexF64}, c::ComplexF64)
+    function g(orbit::Vector{ComplexF64}, c::ComplexF64, ::Val{:diff})
         n = length(orbit)
         λ = 1
 
@@ -138,10 +143,10 @@ struct DynamicalSystem
 
     function DynamicalSystem(f::Function, critical_point::Function)
         result = critical_point(0.0im)
-        if !(result isa ComplexF64 || (result isa Tuple && all(x -> x isa ComplexF64, result)))
+        if !(result isa ComplexF64 || result isa Vector{ComplexF64})
             throw(
-                "The critical point function must return ComplexF64 or a tuple of ComplexF64 values.\n" *
-                "Got result of type $(typeof(result))"
+                "The critical point function must return a ComplexF64 or a Vector{ComplexF64}.\n" *
+                "Got result of type $(typeof(result))",
             )
         end
 
@@ -158,16 +163,7 @@ end
 function DynamicalSystem(f::Function, c::Number)
     c = convert(ComplexF64, c)
     g = let c = c
-        _ -> c
-    end
-
-    return DynamicalSystem(f, g)
-end
-
-function DynamicalSystem(f::Function, c::Tuple)
-    c = ComplexF64.(c)
-    g = let c = c
-        _ -> c
+        _ -> [c]
     end
 
     return DynamicalSystem(f, g)
@@ -357,15 +353,16 @@ function is_nearby(z::T, cycle::Vector{T}, ε::Real) where {T<:PointLike}
     return false, ε, 0
 end
 
-
 function convergence_time(
     f::Function,
-    z::Tuple{Vararg{T}},
+    z::Vector{T},
     c::T,
     attractors::Vector{Attractor{T}},
     ε::Float64,
     max_iterations::Int,
 ) where {T<:PointLike}
+    z = copy(z)
+
     for iteration in 0:max_iterations
         for attractor in attractors
             for zi in z
@@ -374,7 +371,9 @@ function convergence_time(
             end
         end
 
-        z = f.(z, Ref(c))
+        for i in eachindex(z)
+            z[i] = f(z[i], c)
+        end
     end
 
     return max_iterations + 1, ε, empty_attractor, 0
@@ -388,7 +387,7 @@ function convergence_time(
     ε::Float64,
     max_iterations::Int,
 ) where {T<:PointLike}
-    return convergence_time(f,tuple(z),c,attractors,ε,max_iterations)
+    return convergence_time(f, [z], c, attractors, ε, max_iterations)
 end
 
 struct CloseBy
@@ -399,17 +398,20 @@ end
 
 const MaybeCloseBy = Union{Nothing,CloseBy}
 
-function period_multiple_apart(f, z::Tuple, c, ε, max_iterations)
-    slow = fast = z
+function period_multiple_apart(f, z::Vector{T}, c, ε, max_iterations) where {T<:PointLike}
+    slow = copy(z)
+    fast = copy(z)
 
     for n in 1:max_iterations
-        slow = f.(slow, Ref(c))
-        fast = f.(f.(fast, Ref(c)), Ref(c))
+        for i in eachindex(slow)
+            slow[i] = f(slow[i], c)
+            fast[i] = f(f(fast[i], c), c)
+        end
 
-        close = distance.(slow, fast) .<= ε
-        if any(close)
+        if any(distance(s, f) <= ε for (s, f) in zip(slow, fast))
+            close = [distance(s, f) <= ε for (s, f) in zip(slow, fast)]
             index = findall(close)[1]
-            return (CloseBy(n, slow[index], fast[findall(close)[1]]),index)
+            return CloseBy(n, slow[index], fast[index]), index
         end
     end
 
@@ -417,9 +419,16 @@ function period_multiple_apart(f, z::Tuple, c, ε, max_iterations)
 end
 
 function period_multiple_apart(f, z, c, ε, max_iterations)
-    ret = period_multiple_apart(f, tuple(z), c, ε, max_iterations)
-    isnothing(ret) && return nothing
-    return ret[1]
+    slow = fast = z
+
+    for n in 1:max_iterations
+        slow = f(slow, c)
+        fast = f(f(fast, c), c)
+
+        distance(slow, fast) <= ε && return CloseBy(n, slow, fast)
+    end
+
+    return nothing
 end
 
 function iterate_until_close(f, z, w, c, ε, max_iterations)
@@ -450,12 +459,11 @@ end
 
 const MaybeOrbitData = Union{Nothing,OrbitData}
 
+function multiplier(f, z0::Vector{T}, c, _, ε, max_iterations) where {T<:PointLike}
+    result = period_multiple_apart(f, z0, c, ε, max_iterations)
+    isnothing(result) && return nothing
 
-function multiplier(f, z0::Tuple, c, _, ε, max_iterations)
-    ret = period_multiple_apart(f, z0, c, ε, max_iterations)
-    isnothing(ret) && return nothing
-    (points,index) = ret
-
+    (points, index) = result
     points = iterate_until_close(f, points.z, points.w, c, ε, max_iterations)
     isnothing(points) && return nothing
 
@@ -467,8 +475,8 @@ function multiplier(f, z0::Tuple, c, _, ε, max_iterations)
     return OrbitData(preperiod, period)
 end
 
-function multiplier(f, z0::PointLike, c, _, ε, max_iterations)
-    return multiplier(f, tuple(z0), c, nothing, ε, max_iterations)
+function multiplier(f, z0::T, c, _, ε, max_iterations) where {T<:PointLike}
+    return multiplier(f, [z0], c, nothing, ε, max_iterations)
 end
 
 function attractor_index(z, julia, d_system, options)
@@ -597,7 +605,7 @@ function get_attractor(
     end
 
     plane_orbit = convert(Vector{ComplexF64}, orbit)
-    multiplier = abs(g(plane_orbit, c))
+    multiplier = abs(g(plane_orbit, c, Val(:diff)))
 
     projective || (orbit = plane_orbit)
 
@@ -654,7 +662,7 @@ function get_attractors(f::Function, c::Number; projective::Bool = false, ε::Re
     end
 
     plane_orbits = convert.(Vector{ComplexF64}, orbits)
-    multipliers = [abs(g(o, c)) for o in plane_orbits]
+    multipliers = [abs(g(o, c, Val(:diff))) for o in plane_orbits]
 
     projective || (orbits = plane_orbits)
 
@@ -1909,7 +1917,6 @@ struct Viewer
         )
 
         test_crits = d_system.critical_point(c)
-        test_crits = test_crits isa Number ? (test_crits,) : test_crits
         julia.marks = [Observable(ComplexF64[]) for _ in test_crits]
 
         store_schemes!(options, julia_coloring.attractors)
@@ -2057,6 +2064,18 @@ function change_color!(figure, julia, i, d_system, options)
         end
 
         return Consume(true)
+    end
+
+    return nothing
+end
+
+function update_viewer!(viewer::Viewer, which::Symbol)
+    if which == :both || which == :julia
+        update_view!(viewer.julia, viewer.d_system, viewer.options)
+    end
+
+    if viewer.options.is_family && (which == :both || which == :mandel)
+        update_view!(viewer.mandel, viewer.d_system, viewer.options)
     end
 
     return nothing
