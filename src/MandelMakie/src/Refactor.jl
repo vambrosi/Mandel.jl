@@ -57,10 +57,20 @@ end
 
 function extend_function(f::Function)
     # Makes sure function returns a vector
-    if f(0.0im) isa Vector
+    result = f(0.0im)
+    if result isa Vector{ComplexF64}
         f_vector = z -> f(z)
+    elseif result isa Tuple{ComplexF64}
+        f_vector = z -> [f(z)...]
+    elseif try; ComplexF64(result); true; catch; false; end 
+        f_vector = z -> [ComplexF64(f(z))]
+    elseif all(x -> try; ComplexF64(x); true; catch; false; end, result)
+        f_vector = z -> ComplexF64.(f(z))
     else
-        f_vector = z -> [f(z)]
+        throw(
+            "The critical point functions should return a ComplexF64 or a Vector{ComplexF64}.\n" *
+            "Got result of type $(typeof(result))",
+        )
     end
 
     @variables u, v
@@ -142,13 +152,6 @@ struct DynamicalSystem
     critical_point::Function
 
     function DynamicalSystem(f::Function, critical_point::Function)
-        result = critical_point(0.0im)
-        if !(result isa ComplexF64 || result isa Vector{ComplexF64})
-            throw(
-                "The critical point function must return a ComplexF64 or a Vector{ComplexF64}.\n" *
-                "Got result of type $(typeof(result))",
-            )
-        end
 
         if hasmethod(f, ComplexF64) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
             h = (z, c) -> f(z)
