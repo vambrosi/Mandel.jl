@@ -8,6 +8,7 @@ using GLMakie.Colors
 using Crayons
 
 import Dates, Nemo
+import Base: ==
 
 GLMakie.activate!(title = "MandelMakie")
 
@@ -834,15 +835,37 @@ mutable struct Options
     pullbacks::Int
     period::Int
     drag_setting::Symbol
+    viewbox_lock::ReentrantLock
 end
 
-mutable struct MandelView <: View
+struct Viewbox
     center::ComplexF64
     diameter::Float64
     pixels::Int
 
-    init_center::ComplexF64
-    init_diameter::Float64
+    corner::ComplexF64
+    step::Float64
+
+    function Viewbox(center, diameter, pixels)
+        diameter > 0.0 || throw("diameter must be a positive real")
+        pixels > 0 || throw("pixels must be a positive integer")
+
+        step = diameter / pixels
+        corner_real = real(center) - diameter / 2 + 0.5 * step
+        corner_imag = imag(center) - diameter / 2 + 0.5 * step
+        corner = complex(corner_real, corner_imag)
+
+        return new(center, diameter, pixels, corner, step)
+    end
+end
+
+==(v1::Viewbox, v2::Viewbox) =
+    v1.center == v2.center && v1.diameter == v2.diameter && v1.pixels == v2.pixels
+
+mutable struct MandelView <: View
+    viewbox::Viewbox
+    init_viewbox::Viewbox
+    buffer_viewbox::Viewbox
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
@@ -858,17 +881,17 @@ mutable struct MandelView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
+        viewbox = Viewbox(center, diameter, pixels)
+
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
-            center,
-            diameter,
-            pixels,
-            center,
-            diameter,
+            viewbox,
+            viewbox,
+            viewbox,
             colors,
             points,
             marks,
@@ -882,13 +905,11 @@ mutable struct MandelView <: View
 end
 
 mutable struct JuliaView <: View
-    center::ComplexF64
-    diameter::Float64
-    parameter::ComplexF64
-    pixels::Int
+    viewbox::Viewbox
+    init_viewbox::Viewbox
+    buffer_viewbox::Viewbox
 
-    init_center::ComplexF64
-    init_diameter::Float64
+    parameter::ComplexF64
 
     colors::Observable{Matrix{RGBA{Float64}}}
     points::Observable{Vector{ComplexF64}}
@@ -903,18 +924,18 @@ mutable struct JuliaView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
+        viewbox = Viewbox(center, diameter, pixels)
+
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
-            center,
-            diameter,
+            viewbox,
+            viewbox,
+            viewbox,
             parameter,
-            pixels,
-            center,
-            diameter,
             colors,
             points,
             marks,
@@ -931,14 +952,14 @@ end
 # Change of Coordinates between Complex Plane, Projective Line, and Pixel Space
 # --------------------------------------------------------------------------------------- #
 
-function to_complex_plane(view::View, pixel_vector)
+function to_complex_plane(viewbox::Viewbox, pixel_vector)
     x, y = pixel_vector[1], pixel_vector[2]
 
-    upp = view.diameter / view.pixels
-    a = (x + 0.5 - view.pixels / 2) * upp
-    b = (y + 0.5 - view.pixels / 2) * upp
+    upp = viewbox.diameter / viewbox.pixels
+    a = (x + 0.5 - viewbox.pixels / 2) * upp
+    b = (y + 0.5 - viewbox.pixels / 2) * upp
 
-    return view.center + complex(a, b)
+    return viewbox.center + complex(a, b)
 end
 
 function to_complex_plane(pt::Point)
@@ -948,25 +969,25 @@ function to_complex_plane(pt::Point)
     return z
 end
 
-function to_pixel_space(view::View, z::Number)
-    ppu = view.pixels / view.diameter
-    w = z - view.center
+function to_pixel_space(viewbox::Viewbox, z::Number)
+    ppu = viewbox.pixels / viewbox.diameter
+    w = z - viewbox.center
 
-    x = real(w) * ppu - 0.5 + view.pixels / 2
-    y = imag(w) * ppu - 0.5 + view.pixels / 2
+    x = real(w) * ppu - 0.5 + viewbox.pixels / 2
+    y = imag(w) * ppu - 0.5 + viewbox.pixels / 2
 
     return [x, y]
 end
 
-function to_pixel_space(view::View, zs::Vector{<:Number})
-    ppu = view.pixels / view.diameter
+function to_pixel_space(viewbox::Viewbox, zs::Vector{<:Number})
+    ppu = viewbox.pixels / viewbox.diameter
     xs = Float64[]
     ys = Float64[]
 
     for z in zs
-        w = z - view.center
-        push!(xs, real(w) * ppu - 0.5 + view.pixels / 2)
-        push!(ys, imag(w) * ppu - 0.5 + view.pixels / 2)
+        w = z - viewbox.center
+        push!(xs, real(w) * ppu - 0.5 + viewbox.pixels / 2)
+        push!(ys, imag(w) * ppu - 0.5 + viewbox.pixels / 2)
     end
 
     return xs, ys
@@ -986,19 +1007,16 @@ function pick_orbit!(
     return julia
 end
 
-function corner_and_step(view::View)
-    step = view.diameter / view.pixels
+function mandel_slice!(array, j, f, crit, last_viewbox, viewbox, coloring_data, options)
+    if @lock options.viewbox_lock viewbox != last_viewbox
+        return false
+    end
 
-    corner_real = real(view.center) - view.diameter / 2 + 0.5 * step
-    corner_imag = imag(view.center) - view.diameter / 2 + 0.5 * step
-    corner = complex(corner_real, corner_imag)
-
-    return corner, step
-end
-
-function mandel_slice!(array, j, f, crit, corner, step, pxs, coloring_data, options)
-    @inbounds for i in 1:pxs
-        c = convert(attractor_type(coloring_data), corner + step * complex(i, j))
+    @inbounds for i in 1:viewbox.pixels
+        c = convert(
+            attractor_type(coloring_data),
+            viewbox.corner + viewbox.step * complex(i, j),
+        )
 
         array[i, j] = coloring_data.method(
             f,
@@ -1009,39 +1027,48 @@ function mandel_slice!(array, j, f, crit, corner, step, pxs, coloring_data, opti
             options.max_iterations,
         )
     end
-    return nothing
+    return true
 end
 
-function update_grid!(
+function updated_grid(
+    viewbox::Viewbox,
     view::MandelView,
     d_system::DynamicalSystem,
-    corner::ComplexF64,
-    step::Float64,
     options::Options,
 )
-    futures = Vector{Task}(undef, view.pixels)
+    futures = Vector{Task}(undef, viewbox.pixels)
+    colors = similar(view.colors[])
 
-    @inbounds for j in 1:view.pixels
+    @inbounds for j in 1:viewbox.pixels
         futures[j] = Threads.@spawn mandel_slice!(
-            view.colors[],
+            colors,
             j,
             d_system.map,
             d_system.critical_point,
-            corner,
-            step,
-            view.pixels,
+            view.buffer_viewbox,
+            viewbox,
             view.coloring_data,
             options,
         )
     end
 
-    wait.(futures)
+    if all(fetch.(futures))
+        return colors
+    end
+
     return nothing
 end
 
-function julia_slice!(array, j, f, c, corner, step, pxs, coloring_data, options)
-    @inbounds for i in 1:pxs
-        z = convert(attractor_type(coloring_data), corner + step * complex(i, j))
+function julia_slice!(array, j, f, c, last_viewbox, viewbox, coloring_data, options)
+    if @lock options.viewbox_lock viewbox != last_viewbox
+        return false
+    end
+
+    @inbounds for i in 1:viewbox.pixels
+        z = convert(
+            attractor_type(coloring_data),
+            viewbox.corner + viewbox.step * complex(i, j),
+        )
 
         array[i, j] = coloring_data.method(
             f,
@@ -1052,49 +1079,96 @@ function julia_slice!(array, j, f, c, corner, step, pxs, coloring_data, options)
             options.max_iterations,
         )
     end
-    return nothing
+
+    return true
 end
 
-function update_grid!(
+function updated_grid(
+    viewbox::Viewbox,
     view::JuliaView,
     d_system::DynamicalSystem,
-    corner::ComplexF64,
-    step::Float64,
     options::Options,
 )
     parameter = convert(attractor_type(view.coloring_data), view.parameter)
-    futures = Vector{Task}(undef, view.pixels)
+    futures = Vector{Task}(undef, viewbox.pixels)
+    colors = similar(view.colors[])
 
-    @inbounds for j in 1:view.pixels
+    @inbounds for j in 1:viewbox.pixels
         futures[j] = Threads.@spawn julia_slice!(
-            view.colors[],
+            colors,
             j,
             d_system.map,
             parameter,
-            corner,
-            step,
-            view.pixels,
+            view.buffer_viewbox,
+            viewbox,
             view.coloring_data,
             options,
         )
     end
 
-    wait.(futures)
+    if all(fetch.(futures))
+        return colors
+    end
+
     return nothing
 end
 
-function update_view!(view::View, d_system::DynamicalSystem, options::Options)
-    corner, step = corner_and_step(view)
-    update_grid!(view, d_system, corner, step, options)
-    notify(view.colors)
-    notify(view.points)
+function update_view!(
+    view::View,
+    axis::Axis,
+    viewbox::Viewbox,
+    d_system::DynamicalSystem,
+    options::Options,
+)
+    maybe_colors = updated_grid(viewbox, view, d_system, options)
 
-    for marks in view.marks
-        notify(marks)
+    @lock options.viewbox_lock begin
+        if !isnothing(maybe_colors) && view.buffer_viewbox == viewbox
+            view.viewbox = viewbox
+            view.buffer_viewbox = viewbox
+
+            view.colors[] = maybe_colors
+            notify(view.points)
+
+            for marks in view.marks
+                notify(marks)
+            end
+
+            for ray in view.rays
+                notify(ray)
+            end
+
+            reset_limits!(axis)
+        end
     end
 
-    for ray in view.rays
-        notify(ray)
+    return view
+end
+
+function update_view!(
+    view::View,
+    viewbox::Viewbox,
+    d_system::DynamicalSystem,
+    options::Options,
+)
+    maybe_colors = updated_grid(viewbox, view, d_system, options)
+
+    @lock options.viewbox_lock begin
+        if !isnothing(maybe_colors) && view.buffer_viewbox == viewbox
+            view.viewbox = viewbox
+            view.buffer_viewbox = viewbox
+
+            view.colors[] = maybe_colors
+            notify(view.points)
+
+            for marks in view.marks
+                notify(marks)
+            end
+
+            for ray in view.rays
+                notify(ray)
+            end
+        end
     end
 
     return view
@@ -1141,7 +1215,7 @@ function pick_parameter!(
         sync_schemes!(options, julia.coloring_data.attractors)
     end
 
-    update_view!(julia, d_system, options)
+    update_view!(julia, julia.viewbox, d_system, options)
     pick_orbit!(julia, d_system, options, julia.points[][begin])
     return julia
 end
@@ -1179,8 +1253,8 @@ function create_frames!(figure, options, mandel::Nothing, julia)
 end
 
 function create_frames!(figure, options, mandel::MandelView, julia)
-    mandel_limits = (0.5, 0.5 + mandel.pixels, 0.5, 0.5 + mandel.pixels)
-    julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
+    mandel_limits = (0.5, 0.5 + mandel.viewbox.pixels, 0.5, 0.5 + mandel.viewbox.pixels)
+    julia_limits = (0.5, 0.5 + julia.viewbox.pixels, 0.5, 0.5 + julia.viewbox.pixels)
 
     left_axis = Axis(figure[1, 1][1, 1], aspect = 1, limits = mandel_limits)
     right_axis = Axis(figure[1, 1][1, 1], aspect = 1, limits = julia_limits)
@@ -1223,7 +1297,7 @@ function delete_plots!(frame::Frame)
     for marks in view.marks
         empty!(marks.listeners)
     end
-    
+
     # TODO: rays
 end
 
@@ -1238,13 +1312,13 @@ function create_plot!(frame::Frame)
         colorrange = (0.0, 1.0),
         inspectable = false,
         inspector_label = (self, i, p) -> let
-            z = to_complex_plane(view, p)
+            z = to_complex_plane(view.viewbox, p)
             "x: $(real(z))\ny: $(imag(z))"
         end,
     )
 
     point_vectors = lift(view.points) do zs
-        xs, ys = to_pixel_space(view, zs)
+        xs, ys = to_pixel_space(view.viewbox, zs)
         return Point2f.(xs, ys)
     end
 
@@ -1255,14 +1329,14 @@ function create_plot!(frame::Frame)
         point_vectors,
         color = (:red, 1.0),
         inspector_label = (self, i, p) -> let
-            z = to_complex_plane(view, p)
+            z = to_complex_plane(view.viewbox, p)
             "x: $(real(z))\ny: $(imag(z))"
         end,
     )
 
     for orbit in view.marks
         orbit_vectors = lift(orbit) do zs
-            xs, ys = to_pixel_space(view, zs)
+            xs, ys = to_pixel_space(view.viewbox, zs)
             return Point2f.(xs, ys)
         end
 
@@ -1271,7 +1345,7 @@ function create_plot!(frame::Frame)
             frame.axis,
             orbit_vectors,
             inspector_label = (self, i, p) -> let
-                z = to_complex_plane(view, p)
+                z = to_complex_plane(view.viewbox, p)
                 "x: $(real(z))\ny: $(imag(z))"
             end,
         )
@@ -1287,7 +1361,7 @@ function create_plot!(frame::Frame)
         view.line_refs = []
         for ray in view.rays
             ray_vectors = lift(ray) do zs
-                xs, ys = to_pixel_space(view, zs)
+                xs, ys = to_pixel_space(view.viewbox, zs)
                 return Point2f.(xs, ys)
             end
 
@@ -1320,19 +1394,21 @@ function zoom!(frame::Frame, d_system::DynamicalSystem, options::Options)
 
     scale = current_size / original_size
     vector = mouseposition(frame.axis.scene)
-    z = to_complex_plane(view, vector)
+    z = to_complex_plane(view.viewbox, vector)
 
-    view.diameter *= scale
-    view.center = scale * view.center + (1 - scale) * z
-    update_view!(view, d_system, options)
-    reset_limits!(frame.axis)
+    diameter = scale * view.viewbox.diameter
+    center = scale * view.viewbox.center + (1 - scale) * z
+    new_viewbox = Viewbox(center, diameter, view.viewbox.pixels)
+    @lock options.viewbox_lock view.buffer_viewbox = new_viewbox
+
+    update_view!(view, frame.axis, new_viewbox, d_system, options)
     frame.events[:is_zooming] = false
 
     return frame
 end
 
 function save_view(filename::String, view::View)
-    pxs = view.pixels
+    pxs = view.viewbox.pixels
     fig = Figure(figure_padding = 0, size = (pxs, pxs))
     ax = Axis(fig[1, 1], aspect = AxisAspect(1))
 
@@ -1363,7 +1439,7 @@ function add_frame_events!(
     to_world_at_start = z -> to_world(scene, z)
 
     is_zooming = false
-    zooming = Timer(_ -> zoom!(frame, d_system, options), 0.1)
+    zooming = Timer(_ -> nothing, 0.1)
 
     is_topframe = frame == topframe
     z_level = is_topframe ? 10 : 0
@@ -1371,7 +1447,7 @@ function add_frame_events!(
     function set_red_point_using_mouse_position()
         mp = mouseposition_px(scene)
         view = frame.view[]
-        point = to_complex_plane(view, to_world_at_start(mp))
+        point = to_complex_plane(view.viewbox, to_world_at_start(mp))
         if view isa MandelView
             pick_parameter!(julia, view, d_system, options, point)
         elseif view isa JuliaView
@@ -1395,11 +1471,14 @@ function add_frame_events!(
 
             elseif event.action == Mouse.release && (drag_mode == :rightclick)
                 dragend = to_world_at_start(mp)
-                view.center +=
-                    to_complex_plane(view, dragstart) - to_complex_plane(view, dragend)
+                center =
+                    view.viewbox.center + to_complex_plane(view.viewbox, dragstart) -
+                    to_complex_plane(view.viewbox, dragend)
+                new_viewbox = Viewbox(center, view.viewbox.diameter, view.viewbox.pixels)
+                @lock options.viewbox_lock view.buffer_viewbox = new_viewbox
+
                 translate!(scene, 0, 0, z_level)
-                update_view!(view, d_system, options)
-                reset_limits!(axis)
+                update_view!(view, axis, new_viewbox, d_system, options)
                 drag_mode = :notdragging
             end
         end
@@ -1409,19 +1488,17 @@ function add_frame_events!(
                is_mouseinside(axis) &&
                (is_topframe || !is_mouseinside(topframe.axis))
                 if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
-                    view.center = view.init_center
-                    view.diameter = view.init_diameter
+                    new_viewbox = view.init_viewbox
+                    @lock options.viewbox_lock view.buffer_viewbox = new_viewbox
 
                     translate!(scene, 0, 0, z_level)
-                    update_view!(view, d_system, options)
-                    reset_limits!(axis)
-
+                    update_view!(view, axis, new_viewbox, d_system, options)
                     return Consume(true)
 
                 elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
                        view == julia &&
                        options.coloring_methods[2] != :preperiod
-                    z = to_complex_plane(julia, mouseposition(scene))
+                    z = to_complex_plane(julia.viewbox, mouseposition(scene))
                     i = attractor_index(z, julia, d_system, options)
 
                     i == 0 && (return Consume(true))
@@ -1459,7 +1536,7 @@ function add_frame_events!(
            !is_zooming &&
            (is_topframe || !is_mouseinside(topframe.axis))
             close(zooming)
-            zooming = Timer(_ -> zoom!(frame, d_system, options), 0.1)
+            zooming = Timer(_ -> zoom!(frame, d_system, options), 0.05)
         end
     end
 
@@ -1498,7 +1575,7 @@ function add_frame_events!(
             if is_mouseinside(axis) &&
                !is_zooming &&
                (is_topframe || !is_mouseinside(topframe.axis))
-                z = to_complex_plane(julia, mouseposition(scene))
+                z = to_complex_plane(julia.viewbox, mouseposition(scene))
                 i = attractor_index(z, julia, d_system, options)
 
                 i == 0 && (return Consume(true))
@@ -1509,7 +1586,7 @@ function add_frame_events!(
                 options.coloring_schemes[i].continuous_coloring =
                     julia.coloring_data.attractors[i].continuous_coloring
 
-                update_view!(julia, d_system, options)
+                update_view!(julia, julia.viewbox, d_system, options)
                 return Consume(true)
             end
         end
@@ -1600,8 +1677,8 @@ function add_buttons!(
 
     on(inputs[:max_iter].stored_string) do s
         options.max_iterations = parse(Int, s)
-        update_view!(julia, d_system, options)
-        options.is_family && update_view!(mandel, d_system, options)
+        update_view!(julia, julia.viewbox, d_system, options)
+        options.is_family && update_view!(mandel, mandel.viewbox, d_system, options)
     end
 
     on(inputs[:orbit_len].stored_string) do s
@@ -1635,8 +1712,8 @@ function add_buttons!(
             sync_schemes!(options, julia.coloring_data.attractors)
         end
 
-        update_view!(julia, d_system, options)
-        options.is_family && update_view!(mandel, d_system, options)
+        update_view!(julia, julia.viewbox, d_system, options)
+        options.is_family && update_view!(mandel, mandel.viewbox, d_system, options)
     end
 
     if options.is_family
@@ -1878,6 +1955,7 @@ struct Viewer
             0,
             1,
             left_click_drag,
+            ReentrantLock(),
         )
         figure = Figure(size = (800, 850))
 
@@ -1919,14 +1997,14 @@ struct Viewer
             add_frame_events!(figure, left_frame, left_frame, d_system, options, julia)
 
             create_plot!(left_frame)
-            update_view!(mandel, d_system, options)
+            update_view!(mandel, mandel.viewbox, d_system, options)
             mandel.points[] = [julia.parameter]
         else
             add_frame_events!(figure, right_frame, right_frame, d_system, options, julia)
         end
 
         create_plot!(right_frame)
-        update_view!(julia, d_system, options)
+        update_view!(julia, julia.viewbox, d_system, options)
 
         colgap!(content(figure[1, 1]), 10)
         inputs = add_buttons!(
@@ -1983,7 +2061,7 @@ function change_color!(julia, i, chroma, hue, d_system, options)
     options.coloring_schemes[i].palette = attractor.palette
     options.coloring_schemes[i].continuous_coloring = attractor.continuous_coloring
 
-    update_view!(julia, d_system, options)
+    update_view!(julia, julia.viewbox, d_system, options)
     return nothing
 end
 
@@ -2057,11 +2135,11 @@ end
 
 function update_viewer!(viewer::Viewer, which::Symbol)
     if which == :both || which == :julia
-        update_view!(viewer.julia, viewer.d_system, viewer.options)
+        update_view!(viewer.julia, viewer.julia.viewbox, viewer.d_system, viewer.options)
     end
 
     if viewer.options.is_family && (which == :both || which == :mandel)
-        update_view!(viewer.mandel, viewer.d_system, viewer.options)
+        update_view!(viewer.mandel, viewer.mandel.viewbox, viewer.d_system, viewer.options)
     end
 
     return nothing
