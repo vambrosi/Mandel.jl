@@ -1240,7 +1240,7 @@ function translate_axis!(axis, z)
 end
 
 function create_frames!(figure, options, mandel::Nothing, julia)
-    julia_limits = (0.5, 0.5 + julia.pixels, 0.5, 0.5 + julia.pixels)
+    julia_limits = (0.5, 0.5 + julia.viewbox.pixels, 0.5, 0.5 + julia.viewbox.pixels)
     axis = Axis(figure[1, 1][1, 1], aspect = 1, limits = julia_limits)
     translate_axis!(axis, 0)
 

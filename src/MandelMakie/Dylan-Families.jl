@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.38
+# v0.20.16
 
 using Markdown
 using InteractiveUtils
@@ -189,16 +189,10 @@ Viewer(
 )
   ╠═╡ =#
 
-# ╔═╡ e3045f93-acd6-4ccd-9898-3765b980e7f0
-
-
 # ╔═╡ 9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 md"""
 ## Census maps
 """
-
-# ╔═╡ 0ac919c3-7c22-48cc-9256-1600f3fc3d3f
-
 
 # ╔═╡ f9c1ce04-81de-4458-8bf1-8225956b1011
 f49(z) = z^2 * (z-1) / ((z - 2/3)^2 * (z + 1/3))
@@ -249,12 +243,12 @@ Cubic maps with $f(\infty) = \infty$, $f'(\infty) = 0$ and the symmetry $f(\omeg
 devaney21(z,λ) = z^2 + λ/z
 
 # ╔═╡ 1388f3fa-c79e-4e4e-9455-b789fdb51378
-devaney21crit(λ) = (λ/2)^(1/3)
+devaney21crit(λ) = (Complex(λ)/2)^(1/3)
 
 # ╔═╡ 3c9b33d6-19a5-4cea-a787-cb143c9c82ee
 # ╠═╡ disabled = true
 #=╠═╡
-Viewer(devaney21, crit = devaney21crit, mandel_diameter=1.5,c=-16/27)
+Viewer(devaney21, crit = devaney21crit, mandel_diameter=1.5, c=-16/27)
   ╠═╡ =#
 
 # ╔═╡ 60c35275-4216-40c1-91f0-ae35d0e8b31a
@@ -311,9 +305,7 @@ MandelMakie.get_attractors(v)
 # ╠═bea223da-13a5-4662-9e1f-ed6b27cf6d54
 # ╠═2962904d-2c4d-4fe7-9c59-f735ab953bfa
 # ╠═43af11b5-9593-4950-b853-8fa8869e6ace
-# ╠═e3045f93-acd6-4ccd-9898-3765b980e7f0
-# ╠═9f9585b3-011c-4ae9-b5ce-069ecef3a23e
-# ╠═0ac919c3-7c22-48cc-9256-1600f3fc3d3f
+# ╟─9f9585b3-011c-4ae9-b5ce-069ecef3a23e
 # ╠═f9c1ce04-81de-4458-8bf1-8225956b1011
 # ╠═3bcf1908-b27b-4734-8315-08121ce1657b
 # ╠═f966a1a4-8b1a-4f84-8452-50ac7b0024e9
@@ -322,7 +314,7 @@ MandelMakie.get_attractors(v)
 # ╠═fb1f9c3a-ec39-4d6f-acb3-1ddfd56d614b
 # ╠═36714bb2-3622-47eb-a7b5-f4c99145bd59
 # ╠═1c99e13e-e034-4d55-91be-ec22f1125a3d
-# ╠═29c2e25e-77f0-4d9f-94b0-163f8e58c7f8
+# ╟─29c2e25e-77f0-4d9f-94b0-163f8e58c7f8
 # ╟─0e78c206-3a75-419c-80d6-5ef4a8af6dc4
 # ╠═6cecbde5-42bc-4d74-8f68-2b458912585a
 # ╠═1388f3fa-c79e-4e4e-9455-b789fdb51378

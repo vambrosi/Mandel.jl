@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.46
+# v0.20.16
 
 using Markdown
 using InteractiveUtils
@@ -50,7 +50,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-Viewer(f; crit = crit, mandel_diameter = 1.0)
+Viewer(f; crit = crit, mandel_center = -0.5)
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true
