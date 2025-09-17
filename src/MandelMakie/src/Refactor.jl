@@ -1827,7 +1827,7 @@ end
 """
     Viewer(f; <keyword arguments>)
 
-Create a `Viewer` that plots the Mandelbrot and the Julia sets associated with the \
+Create a `Viewer` that plots the bifurcation locus and the Julia sets associated with the \
 function `f`. `f` can have one or two inputs, the second being the parameter. By default, \
 the `Viewer` opens as a separate window.
 
@@ -1858,15 +1858,14 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
 # Arguments
 
   - `crit = 0.0im`: Function that gives a critical point for each parameter. Used to plot \
-    the Mandelbrot set. If it is a constant function, you can just input the constant \
+    the bifurcation locus. If it is a constant function, you can just input the constant \
     directly.
   - `c = 0.0im`: Initial parameter used to plot the Julia set.
-  - `mandel_center = 0.0im`: Initial center of the Mandelbrot plot.
-  - `mandel_diameter = 4.0`: Initial diameter of the Mandelbrot plot.
-  - `julia_center = 0.0im`: Initial center of the Julia plot.
-  - `julia_diameter = 4.0`: Initial diameter of the Julia plot.
-  - `grid_width = 800`: Width (and height) of the grid of complex numbers used to plot \
-    sets.
+  - `mandel_center = 0.0im`: Initial center of the parameter plane plot.
+  - `mandel_diameter = 4.0`: Initial diameter of the parameter plane plot.
+  - `julia_center = 0.0im`: Initial center of the dynamical plane plot.
+  - `julia_diameter = 4.0`: Initial diameter of the dynamical plane plot.
+  - `grid_width = 800`: Width (and height) of the grid of complex numbers used in plots.
   - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if \
     `false` they are shown side-by-side.
   - `show_rays = false`: Rays can only be computed for polynomials. Only the dynamic \
@@ -1875,11 +1874,11 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
     is given then a button will be added to compute all the rays up to a period and \
     pullbacks. If `:auto` is given, then those rays are then filtered by whether they \
     land at a cut point, and a lamination is printed.
-  - `left_click_drag = :dynamic_only`: By default, in the dynamic plain, the red \
-    point will be continuously updated to the mouse postion if the left button\
-    remains pressed. This may be undesiorable for performace reasons. Set to `:neither`\
-    to disable. Alternately, it may be tolerable to enable this in both plains with\
-    `:both`.
+  - `left_click_drag = :dynamic_only`: By default, in the dynamic plane, the red \
+    orbit will be continuously updated if the left button remains pressed. \
+    Set this setting to `:neither` to disable continuous updates and to `:both` if \
+    you also want to enable continuous updates on the parameter plane. The latter \
+    is computationally expensive even for simple families of maps.
 
 # Coloring Method Options
 
@@ -1895,11 +1894,12 @@ set views, set the option to be a tuple with the respective values.
 
 # Coloring Methods
 
-  - `:escape_time` (default): colors according how fast the point approaches ∞;
+  - `:escape_time` (default): colors according to how fast the point approaches ∞ (colors \
+    the point black if it doesn't approach ∞);
   - `:convergence_time`: computes all attracting cycles in advance, and then computes how \
     fast each point converges to one of those attractors (uses different color gradients \
     for each attractor). This option is only available for the Julia set, and it will \
-    default to `:preperiod` in the Mandelbrot set case.
+    default to `:preperiod` in the parameter plane case.
   - `:mod_period`: similar to `:convergence_time` but instead of using the `preperiod` \
     (i.e. how fast it converges to attractor) as the "color depth" it uses \
     `mod(preperiod, period)`.
