@@ -6,33 +6,64 @@ At this moment, there are two user interfaces **MandelPluto** and **MandelMakie*
 
 ## How to use MandelMakie
 
-### Using a Terminal Interface
+### If you already have Pluto.jl installed
 
-Clone this repository, and go to the folder `./src/MandelMakie` on your terminal.
-
-Run Julia on the terminal using the following command (needed for multithreading):
+First, run Julia with multithreading enabled
 ```
 julia -t auto
 ```
-
-Enter `]` to bring up Julia's [package manager](https://docs.julialang.org/en/v1/stdlib/Pkg/), then activate and instantiate the **MandelMakie** environment (you might need to type those commands directly instead of copying-and-pasting using the icon on the right, or it might not work)
+Then, run Pluto
 ```julia
-julia> ]
-pkg> activate .
-pkg> instantiate
+import Pluto
+Pluto.run()
+```
+Lastly, run the following code on a new **Pluto.jl** notebook.
+```julia
+begin
+    import Pkg
+    Pkg.activate(mktempdir())
+    Pkg.add(url="https://github.com/vambrosi/Mandel.jl.git",
+			subdir="src/MandelMakie")
+    using MandelMakie
+end
+```
+This will activate a temporary environment, but you can also [use your on environment](https://plutojl.org/en/docs/packages-advanced/).
+
+You can then write `?Viewer` in a cell to see some examples and learn about the user interface.
+
+### Using the REPL
+
+You can also run Julia as above, but add **MandelMakie** directly in the REPL:
+```julia
+import Pkg
+Pkg.activate(mktempdir())
+Pkg.add(url="https://github.com/vambrosi/Mandel.jl.git",
+  subdir="src/MandelMakie")
+using MandelMakie
+```
+Running `?Viewer` in the REPL will show you the documentation.
+
+### Using Git
+
+Clone this repository, and go to the folder `./src/MandelMakie` on your terminal.
+
+Run Julia as before, then activate and instantiate the **MandelMakie** environment
+```julia
+]activate .
+instantiate
 ```
 You will only need to run `instantiate` once to install all the dependencies, but you will need to run `activate` every time you want to use this package. The `.` after `activate` represents the current folder where the `Project.toml` file with the dependencies is located.
 
-Lastly, you can press `Ctrl+C` or `backspace` to exit the package manager and run the following lines to start Pluto
+Press `Ctrl+C` or `backspace` to exit the package manager and run the following lines to start Pluto
 ```julia
-julia> import Pluto
-julia> Pluto.run()
+import Pluto
+Pluto.run()
 ```
 This will open a browser window, and you can open the file `Examples.jl` for further instructions and examples of how to interact with the package.
 
 ### Using Visual Studio Code
 
-This is similar to the process above, so we will mostly point out the differences.
+This is similar to the last section, so we will mostly point out the differences.
 
 To use multithreading, click on *Extensions -> Julia -> &#9881; -> Extension Settings* and edit **Julia: Num Threads** to `"auto"`.
 
