@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.20.16
+# v0.20.18
 
 using Markdown
 using InteractiveUtils
@@ -268,6 +268,27 @@ gasket2(z) = devaney21(z, 2/27)
 Julia3D(gasket2)
   ╠═╡ =#
 
+# ╔═╡ 2d3283e6-9b1f-445f-81d5-2d433752aec8
+md"""
+## The biquadratic family
+This family is quartic polynomials that factor as a composition $f_2 \circ f_1$ of two quadratic maps, with one of the critical points fixed by the composition. They are specifically parameterized so that
+```math
+0 \overset{2,f_1}{\longmapsto} a \overset{f_2}{\longmapsto} 0.
+```
+The free critical point of $f_2$ is at $0$, and necessarily maps to $-a^2$, which we thus track as the free critical orbit.
+
+These are relevant for bitransitive maps with two simple critical points, as appear prominently in quadratic rational maps or cubic polynomials.
+"""
+
+# ╔═╡ ef18791d-d673-427b-a4dd-1935c293f052
+biquadratic(z,a) = z^2 * (z^2 + 2a)
+
+# ╔═╡ e192b00a-1cdd-4edd-9d6e-8bf96fd439c9
+biquadraticcrit(a) = -a^2
+
+# ╔═╡ 6229738d-2d0b-4bf1-bbd9-f8d60515f9ba
+Viewer(biquadratic, crit = biquadraticcrit)
+
 # ╔═╡ dc85ce65-38a8-4990-86f5-ed6894b96695
 md"""
 ## Instantiating Package
@@ -323,6 +344,10 @@ MandelMakie.get_attractors(v)
 # ╠═c70accb2-d5ba-405d-96cf-745dd8daba06
 # ╠═bd6f8d54-1fde-4b73-a9f2-196e1df43eb2
 # ╠═35a3f7e6-18df-4733-96ec-e746b3adc38e
+# ╟─2d3283e6-9b1f-445f-81d5-2d433752aec8
+# ╠═ef18791d-d673-427b-a4dd-1935c293f052
+# ╠═e192b00a-1cdd-4edd-9d6e-8bf96fd439c9
+# ╠═6229738d-2d0b-4bf1-bbd9-f8d60515f9ba
 # ╟─dc85ce65-38a8-4990-86f5-ed6894b96695
-# ╟─4a085b76-da75-11ee-2b50-07309082fb46
+# ╠═4a085b76-da75-11ee-2b50-07309082fb46
 # ╠═d04798ec-c7c7-4868-b761-f9bb65e9a269
