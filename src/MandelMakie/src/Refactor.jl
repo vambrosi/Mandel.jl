@@ -872,7 +872,7 @@ mutable struct MandelView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    colors::Observable{Matrix{RGBA{Float64}}}
+    colors::Matrix{RGBA{Float64}}
     points::Observable{Vector{ComplexF64}}
     marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
@@ -920,7 +920,7 @@ mutable struct JuliaView <: View
     init_center::ComplexF64
     init_diameter::Float64
 
-    colors::Observable{Matrix{RGBA{Float64}}}
+    colors::Matrix{RGBA{Float64}}
     points::Observable{Vector{ComplexF64}}
     marks::Vector{Observable{Vector{ComplexF64}}}
     rays::Vector{Observable{Vector{ComplexF64}}}
@@ -1208,7 +1208,7 @@ function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
     on(view.refresh_view) do _
         xlim, ylim, colors = get_image(view, d_system, options)
         Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
-        view.colors[] = colors
+        view.colors = colors
     end
 
     # Update the plot when the view changes
@@ -1227,7 +1227,7 @@ function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
         colors = draw_grid(grid, view.coloring_data, d_system, options)
         Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
 
-        view.colors[] = colors
+        view.colors = colors
         view.center = complex(center...)
         view.diameter = 2 * radius
     end
@@ -1303,7 +1303,7 @@ function save_view(filename::String, view::View)
     hidedecorations!(ax)
     hidespines!(ax)
 
-    heatmap!(ax, view.colors[])
+    image!(ax, view.colors)
 
     Makie.save(filename, fig)
 end
