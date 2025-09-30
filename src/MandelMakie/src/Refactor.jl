@@ -1322,7 +1322,6 @@ function add_frame_events!(
 
     # Mouse Events
     dragging = false
-    last_press_px = nothing
 
     is_topframe(axis) =
         is_mouseinside(axis) && (frame == insetframe || !is_mouseinside(insetframe.axis))
@@ -1339,42 +1338,33 @@ function add_frame_events!(
 
     on(events(scene).mousebutton) do event
         is_topframe(axis) || return Consume(false)
-
         mp = mouseposition(scene)
-        mp_px = mouseposition_px(scene)
 
-        if event.button == Mouse.left
-            if event.action == Mouse.press
-                last_press_px = mp_px
-                dragging = true
-            elseif event.action == Mouse.release
-                dragging = false
-                if !isnothing(last_press_px)
-                    update_point(mp)
-                end
+        if event.button == Mouse.left && event.action == Mouse.press
+            if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
+                view.center = view.init_center
+                view.diameter = view.init_diameter
+
+                return Consume(true)
+
+            elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
+                   view == julia &&
+                   options.coloring_methods[2] != :preperiod
+                z = complex(mouseposition(scene)...)
+                i = attractor_index(z, julia, d_system, options)
+
+                i == 0 && (return Consume(true))
+
+                change_color!(figure, julia, i, d_system, options)
+                return Consume(true)
             end
+
+            dragging = true
         end
 
-        if event.button == Mouse.left
-            if event.action == Mouse.press
-                if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
-                    view.center = view.init_center
-                    view.diameter = view.init_diameter
-
-                    return Consume(true)
-
-                elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
-                       view == julia &&
-                       options.coloring_methods[2] != :preperiod
-                    z = complex(mouseposition(scene)...)
-                    i = attractor_index(z, julia, d_system, options)
-
-                    i == 0 && (return Consume(true))
-
-                    change_color!(figure, julia, i, d_system, options)
-                    return Consume(true)
-                end
-            end
+        if event.button == Mouse.left && event.action == Mouse.release
+            dragging && update_point(mp)
+            dragging = false
         end
 
         return Consume(false)
@@ -1386,8 +1376,7 @@ function add_frame_events!(
 
         mp = mouseposition(scene)
 
-        if view isa JuliaView &&
-            (options.drag_setting == :both || options.drag_setting == :dynamic_only)
+        if view isa JuliaView && options.drag_setting != :neither
             update_point(mp)
         elseif view isa MandelView && options.drag_setting == :both
             update_point(mp)
@@ -1959,6 +1948,7 @@ function change_color!(figure, julia, i, d_system, options)
             change_color!(julia, i, r, θ, d_system, options)
 
             delete!(ax)
+            notify(julia.refresh_view)
             off(colorpicker)
         end
 
