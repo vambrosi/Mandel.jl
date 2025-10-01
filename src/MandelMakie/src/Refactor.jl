@@ -1130,7 +1130,7 @@ function translate_axis!(axis, z)
 end
 
 function create_frames!(figure, options, mandel::Nothing, julia)
-    axis = Axis(figure[1, 1][1, 1], autolimitaspect = 1)
+    axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
     translate_axis!(axis, 0)
 
     hidedecorations!(axis)
@@ -1140,8 +1140,8 @@ function create_frames!(figure, options, mandel::Nothing, julia)
 end
 
 function create_frames!(figure, options, mandel::MandelView, julia)
-    left_axis = Axis(figure[1, 1][1, 1], autolimitaspect = 1)
-    right_axis = Axis(figure[1, 1][1, 1], autolimitaspect = 1)
+    left_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
+    right_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
     translate_axis!(left_axis, 10)
     translate_axis!(right_axis, 0)
 
@@ -1150,11 +1150,14 @@ function create_frames!(figure, options, mandel::MandelView, julia)
         left_axis.height = Relative(0.3)
         left_axis.valign = 0.03
         left_axis.halign = 0.03
+        left_axis.aspect = AxisAspect(1)
     else
         left_axis.width = nothing
         left_axis.height = nothing
         left_axis.valign = :center
         left_axis.halign = :center
+        left_axis.aspect = AxisAspect(1)
+        right_axis.aspect = AxisAspect(1)
 
         figure[1, 1][1, 1] = left_axis
         figure[1, 1][1, 2] = right_axis
@@ -1202,7 +1205,9 @@ function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
         return xlim, ylim, draw_grid(grid, view.coloring_data, d_system, options)
     end
 
-    img = image!(frame.axis, get_image(view, d_system, options)..., inspectable = false)
+    xlim, ylim, colors = get_image(view, d_system, options)
+    view.colors = colors
+    img = image!(frame.axis, xlim, ylim, colors, inspectable = false, interpolate = false)
 
     # Notify refresh_view triggers an update of the plot
     on(view.refresh_view) do _
@@ -1308,6 +1313,9 @@ function save_view(filename::String, view::View)
     Makie.save(filename, fig)
 end
 
+refresh!(view::View) = notify(view.refresh_view)
+refresh!(::Nothing) = false
+
 function add_frame_events!(
     figure::Figure,
     frame::Frame,
@@ -1330,7 +1338,7 @@ function add_frame_events!(
         point = complex(mp...)
         if view isa MandelView
             pick_parameter!(julia, view, d_system, options, point)
-            notify(julia.refresh_view)
+            refresh!(julia)
         elseif view isa JuliaView
             pick_orbit!(view, d_system, options, point)
         end
@@ -1344,7 +1352,7 @@ function add_frame_events!(
             if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
                 view.center = view.init_center
                 view.diameter = view.init_diameter
-
+                notify(view)
                 return Consume(true)
 
             elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
@@ -1414,8 +1422,7 @@ function add_frame_events!(
             options.coloring_schemes[i].continuous_coloring =
                 julia.coloring_data.attractors[i].continuous_coloring
 
-            notify(julia.refresh_view)
-
+            refresh!(julia)
             return Consume(true)
         end
     end
@@ -1505,8 +1512,8 @@ function add_buttons!(
 
     on(inputs[:max_iter].stored_string) do s
         options.max_iterations = parse(Int, s)
-        notify(julia.refresh_view)
-        options.is_family && notify(mandel.refresh_view)
+        refresh!(julia)
+        refresh!(mandel)
     end
 
     on(inputs[:orbit_len].stored_string) do s
@@ -1540,8 +1547,8 @@ function add_buttons!(
             sync_schemes!(options, julia.coloring_data.attractors)
         end
 
-        notify(julia.refresh_view)
-        options.is_family && notify(mandel.refresh_view)
+        refresh!(julia)
+        refresh!(mandel)
     end
 
     if options.is_family
@@ -1948,7 +1955,7 @@ function change_color!(figure, julia, i, d_system, options)
             change_color!(julia, i, r, θ, d_system, options)
 
             delete!(ax)
-            notify(julia.refresh_view)
+            refresh!(julia)
             off(colorpicker)
         end
 
