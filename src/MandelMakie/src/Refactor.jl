@@ -1142,7 +1142,7 @@ end
 function create_frames!(figure, options, mandel::MandelView, julia)
     left_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
     right_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
-    translate_axis!(left_axis, 10)
+    translate_axis!(left_axis, 100)
     translate_axis!(right_axis, 0)
 
     if options.compact_view
@@ -1150,14 +1150,11 @@ function create_frames!(figure, options, mandel::MandelView, julia)
         left_axis.height = Relative(0.3)
         left_axis.valign = 0.03
         left_axis.halign = 0.03
-        left_axis.aspect = AxisAspect(1)
     else
         left_axis.width = nothing
         left_axis.height = nothing
         left_axis.valign = :center
         left_axis.halign = :center
-        left_axis.aspect = AxisAspect(1)
-        right_axis.aspect = AxisAspect(1)
 
         figure[1, 1][1, 1] = left_axis
         figure[1, 1][1, 2] = right_axis
@@ -1172,9 +1169,8 @@ function create_frames!(figure, options, mandel::MandelView, julia)
 end
 
 function delete_plots!(frame::Frame)
-
     empty!(frame.axis)
-    
+
     # Clear plot update listeners
     for (_, obsfunc) in frame.events
         off(obsfunc)
@@ -1192,57 +1188,23 @@ function delete_plots!(frame::Frame)
     # TODO: rays
 end
 
+function get_image(view, d_system, options)
+    radius = view.diameter / 2
+
+    xlim = real(view.center) - radius, real(view.center) + radius
+    ylim = imag(view.center) - radius, imag(view.center) + radius
+
+    grid =
+        view isa JuliaView ?
+        ComplexGrid(xlim, ylim, view.parameter, Dynamical, view.pixels) :
+        ComplexGrid(xlim, ylim, 0.0im, Parameter, view.pixels)
+
+    return xlim, ylim, draw_grid(grid, view.coloring_data, d_system, options)
+end
+
 function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
     delete_plots!(frame)
     view = frame.view[]
-
-    # Computing the initial plot
-    function get_image(view, d_system, options)
-        radius = view.diameter / 2
-
-        xlim = real(view.center) - radius, real(view.center) + radius
-        ylim = imag(view.center) - radius, imag(view.center) + radius
-
-        grid =
-            view isa JuliaView ?
-            ComplexGrid(xlim, ylim, view.parameter, Dynamical, view.pixels) :
-            ComplexGrid(xlim, ylim, 0.0im, Parameter, view.pixels)
-
-        return xlim, ylim, draw_grid(grid, view.coloring_data, d_system, options)
-    end
-
-    xlim, ylim, colors = get_image(view, d_system, options)
-    view.colors = colors
-    img = image!(frame.axis, xlim, ylim, colors, inspectable = false, interpolate = false)
-
-    # Notify refresh_view triggers an update of the plot
-    frame.events[:force_refresh] = on(view.refresh_view) do _
-        xlim, ylim, colors = get_image(view, d_system, options)
-        Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
-        view.colors = colors
-    end
-
-    # Update the plot when the view changes
-    limits_obs = async_latest(frame.axis.finallimits)
-    frame.events[:limits_refresh] = on(limits_obs) do box
-        center = box.origin + box.widths / 2
-        radius = max(box.widths...) / 2
-
-        xlim = center[1] - radius, center[1] + radius
-        ylim = center[2] - radius, center[2] + radius
-
-        grid =
-            view isa JuliaView ?
-            ComplexGrid(xlim, ylim, view.parameter, Dynamical, view.pixels) :
-            ComplexGrid(xlim, ylim, 0.0im, Parameter, view.pixels)
-
-        colors = draw_grid(grid, view.coloring_data, d_system, options)
-        Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
-
-        view.colors = colors
-        view.center = complex(center...)
-        view.diameter = 2 * radius
-    end
 
     # Plotting orbit of the red point
     point_vectors = lift(view.points) do zs
@@ -1304,6 +1266,47 @@ function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
     rays_callback()
     view.refresh_rays = rays_callback
 
+    # Computing the initial plot
+    # This is done last or else plotting the points would change the limits and trigger a redraw
+    xlim, ylim, colors = get_image(view, d_system, options)
+    view.colors = colors
+
+    img = image!(frame.axis, xlim, ylim, colors, inspectable = false, interpolate = false)
+    limits!(frame.axis, xlim, ylim)
+
+    # The image plot needs to be below all the other plots
+    translate!(img, 0, 0, -1)
+
+    # Notify refresh_view triggers an update of the plot
+    frame.events[:force_refresh] = on(view.refresh_view) do _
+        xlim, ylim, colors = get_image(view, d_system, options)
+        Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
+        limits!(frame.axis, xlim, ylim)
+        view.colors = colors
+    end
+
+    # Update the plot when the view changes
+    limits_obs = async_latest(frame.axis.finallimits)
+    frame.events[:limits_refresh] = on(limits_obs) do box
+        center = box.origin + box.widths / 2
+        radius = max(box.widths...) / 2
+
+        xlim = center[1] - radius, center[1] + radius
+        ylim = center[2] - radius, center[2] + radius
+
+        grid =
+            view isa JuliaView ?
+            ComplexGrid(xlim, ylim, view.parameter, Dynamical, view.pixels) :
+            ComplexGrid(xlim, ylim, 0.0im, Parameter, view.pixels)
+
+        colors = draw_grid(grid, view.coloring_data, d_system, options)
+        Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
+
+        view.colors = colors
+        view.center = complex(center...)
+        view.diameter = 2 * radius
+    end
+
     return frame
 end
 
@@ -1359,7 +1362,7 @@ function add_frame_events!(
             if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
                 view.center = view.init_center
                 view.diameter = view.init_diameter
-                notify(view.refresh_view)
+                refresh!(view)
                 return Consume(true)
 
             elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
