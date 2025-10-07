@@ -1223,7 +1223,7 @@ function delete_plots!(frame::Frame)
     for marks in view.marks
         empty!(marks.listeners)
     end
-    
+
     # TODO: rays
 end
 
@@ -1677,6 +1677,8 @@ function add_buttons!(
         end
     end
 
+    rowgap!(layout, 5)
+
     return inputs
 end
 
@@ -1879,7 +1881,8 @@ struct Viewer
             1,
             left_click_drag,
         )
-        figure = Figure(size = (800, 850))
+        size = show_rays == false ? (800, 835) : (1030, 835)
+        figure = Figure(size = size, fontsize = 12, figure_padding = 5)
 
         mandel_coloring =
             get_coloring_data(d_system.map, c, coloring_methods[1], projective_metrics[1])
@@ -1939,6 +1942,7 @@ struct Viewer
             options,
             show_rays,
         )
+        rowgap!(figure.layout, 5)
 
         return new(
             d_system,
