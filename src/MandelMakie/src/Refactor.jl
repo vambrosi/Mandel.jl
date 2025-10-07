@@ -1172,7 +1172,13 @@ function create_frames!(figure, options, mandel::MandelView, julia)
 end
 
 function delete_plots!(frame::Frame)
+
     empty!(frame.axis)
+    
+    # Clear plot update listeners
+    for (_, obsfunc) in frame.events
+        off(obsfunc)
+    end
     empty!(frame.events)
 
     view = frame.view[]
@@ -1210,14 +1216,15 @@ function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
     img = image!(frame.axis, xlim, ylim, colors, inspectable = false, interpolate = false)
 
     # Notify refresh_view triggers an update of the plot
-    on(view.refresh_view) do _
+    frame.events[:force_refresh] = on(view.refresh_view) do _
         xlim, ylim, colors = get_image(view, d_system, options)
         Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
         view.colors = colors
     end
 
     # Update the plot when the view changes
-    on(async_latest(frame.axis.finallimits)) do box
+    limits_obs = async_latest(frame.axis.finallimits)
+    frame.events[:limits_refresh] = on(limits_obs) do box
         center = box.origin + box.widths / 2
         radius = max(box.widths...) / 2
 
@@ -1352,7 +1359,7 @@ function add_frame_events!(
             if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
                 view.center = view.init_center
                 view.diameter = view.init_diameter
-                notify(view)
+                notify(view.refresh_view)
                 return Consume(true)
 
             elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
