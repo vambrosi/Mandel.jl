@@ -486,7 +486,7 @@ function attractor_index(z, julia, d_system, options)
     f = d_system.map
     N = options.max_iterations
     ε = options.convergence_radius
-    c = julia.parameter
+    c = get_parameter(julia)
 
     attractor_index = 0
     iterations = 0
@@ -877,7 +877,14 @@ mutable struct Options
     drag_setting::Symbol
 end
 
+mutable struct Frame
+    axis::Axis
+    events::Dict{Symbol,Any}
+end
+
 mutable struct View
+    frame::Frame
+
     box::Viewbox
     init_box::Viewbox
     lock::ReentrantLock
@@ -891,10 +898,13 @@ mutable struct View
 
     coloring_data::ColoringData
     show_rays::Any
+    is_topview::Bool
+
     refresh_view::Observable{Nothing}
 end
 
 function View(;
+    frame,
     center,
     diameter,
     pixels,
@@ -905,9 +915,13 @@ function View(;
     diameter > 0.0 || throw("diameter must be a positive real")
     pixels > 0 || throw("pixels must be a positive integer")
 
-    box =
-        isnothing(parameter) ? Viewbox(center, diameter, 0.0im, ParameterPlane, pixels) :
-        Viewbox(center, diameter, parameter, DynamicalPlane, pixels)
+    if isnothing(parameter)
+        box = Viewbox(center, diameter, 0.0im, ParameterPlane, pixels)
+        is_topview = true
+    else
+        box = Viewbox(center, diameter, parameter, DynamicalPlane, pixels)
+        is_topview = false
+    end
 
     colors = zeros(RGBA{Float64}, pixels, pixels)
     points = ComplexF64[center]
@@ -915,6 +929,7 @@ function View(;
     rays = Observable{Vector{ComplexF64}}[]
 
     return View(
+        frame,
         box,
         box,
         ReentrantLock(),
@@ -926,6 +941,7 @@ function View(;
         () -> nothing,
         coloring_data,
         show_rays,
+        is_topview,
         nothing,
     )
 end
@@ -1102,12 +1118,6 @@ end
 # User Interface
 # --------------------------------------------------------------------------------------- #
 
-struct Frame
-    axis::Axis
-    view::Ref{Any}
-    events::Dict{Symbol,Any}
-end
-
 function translate_axis!(axis, z)
     translate!(axis.scene, 0, 0, z)
     translate!(axis.elements[:background], 0, 0, z - 1)
@@ -1117,68 +1127,47 @@ function translate_axis!(axis, z)
     translate!(axis.yaxis.elements[:axisline], 0, 0, z + 1)
 end
 
-function create_frames!(figure, options, mandel::Nothing, julia)
-    axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
-    translate_axis!(axis, 0)
+function create_frames!(figure, options)
+    if !options.is_family
+        axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
+        translate_axis!(axis, 0)
 
-    hidedecorations!(axis)
-    deregister_interaction!(axis, :rectanglezoom)
+        hidedecorations!(axis)
+        deregister_interaction!(axis, :rectanglezoom)
 
-    return nothing, Frame(axis, julia, Dict())
-end
-
-function create_frames!(figure, options, mandel, julia)
-    left_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
-    right_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
-    translate_axis!(left_axis, 100)
-    translate_axis!(right_axis, 0)
-
-    if options.compact_view
-        left_axis.width = Relative(0.3)
-        left_axis.height = Relative(0.3)
-        left_axis.valign = 0.03
-        left_axis.halign = 0.03
-    else
-        left_axis.width = nothing
-        left_axis.height = nothing
-        left_axis.valign = :center
-        left_axis.halign = :center
-
-        figure[1, 1][1, 1] = left_axis
-        figure[1, 1][1, 2] = right_axis
+        return nothing, Frame(axis, Dict())
     end
 
-    for axis in [left_axis, right_axis]
+    topaxis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
+    bottomaxis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
+    translate_axis!(topaxis, 15)
+    translate_axis!(bottomaxis, 0)
+
+    if options.compact_view
+        topaxis.width = Relative(0.3)
+        topaxis.height = Relative(0.3)
+        topaxis.valign = 0.03
+        topaxis.halign = 0.03
+    else
+        topaxis.width = nothing
+        topaxis.height = nothing
+        topaxis.valign = :center
+        topaxis.halign = :center
+
+        figure[1, 1][1, 1] = topaxis
+        figure[1, 1][1, 2] = bottomaxis
+    end
+
+    for axis in [topaxis, bottomaxis]
         hidedecorations!(axis)
         deregister_interaction!(axis, :rectanglezoom)
     end
 
-    return Frame(left_axis, mandel, Dict()), Frame(right_axis, julia, Dict())
+    return Frame(topaxis, Dict()), Frame(bottomaxis, Dict())
 end
 
-function delete_plots!(frame::Frame)
-    empty!(frame.axis)
-
-    # Clear plot update listeners
-    for (_, obsfunc) in frame.events
-        off(obsfunc)
-    end
-    empty!(frame.events)
-
-    view = frame.view[]
-
-    # Clear old listeners (point_vectors, mark_vectors)
-    empty!(view.points.listeners)
-    for marks in view.marks
-        empty!(marks.listeners)
-    end
-
-    # TODO: rays
-end
-
-function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
-    delete_plots!(frame)
-    view = frame.view[]
+function create_plot!(view::View, d_system::DynamicalSystem, options::Options)
+    frame = view.frame
 
     # Plotting orbit of the red point
     point_vectors = lift(view.points) do zs
@@ -1282,7 +1271,7 @@ function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
         Makie.update!(img.attributes, arg1 = xlimits, arg2 = ylimits, arg3 = colors)
     end
 
-    return frame
+    return view
 end
 
 function save_view(filename::String, view::View)
@@ -1301,39 +1290,42 @@ end
 refresh!(view::View) = notify(view.refresh_view)
 refresh!(::Nothing) = false
 
+function update_point!(julia, view, mp, d_system, options)
+    z = complex(mp...)
+
+    if get_plane_type(view) == ParameterPlane
+        pick_parameter!(julia, view, d_system, options, z)
+        refresh!(julia)
+    else
+        pick_orbit!(view, d_system, options, z)
+    end
+end
+
+is_mouseover(view::View, other_view::View) =
+    is_mouseinside(view.frame.axis) &&
+    (view.is_topview || !is_mouseinside(other_view.frame.axis))
+
+is_mouseover(view::View, ::Nothing) = is_mouseinside(view.frame.axis)
+
 function add_frame_events!(
     figure::Figure,
-    frame::Frame,
-    insetframe::Frame,
+    view::View,
+    other_view::Union{Nothing, View},
     d_system::DynamicalSystem,
     options::Options,
-    julia::View,
 )
+    frame = view.frame
     axis = frame.axis
     scene = axis.scene
+
+    plane_type = get_plane_type(view)
+    julia = plane_type == DynamicalPlane ? view : other_view
 
     # Mouse Events
     dragging = false
 
-    is_topframe(axis) =
-        is_mouseinside(axis) && (frame == insetframe || !is_mouseinside(insetframe.axis))
-
-    function update_point(mp)
-        point = complex(mp...)
-        view = frame.view[]
-
-        if get_plane_type(view) == ParameterPlane
-            pick_parameter!(julia, view, d_system, options, point)
-            refresh!(julia)
-        else
-            pick_orbit!(view, d_system, options, point)
-        end
-    end
-
-    on(events(scene).mousebutton) do event
-        is_topframe(axis) || return Consume(false)
-
-        view = frame.view[]
+    frame.events[:mousebutton] = on(events(scene).mousebutton) do event
+        is_mouseover(view, other_view) || return Consume(false)
         mp = mouseposition(scene)
 
         if event.button == Mouse.left && event.action == Mouse.press
@@ -1345,7 +1337,7 @@ function add_frame_events!(
             elseif ispressed(scene, Keyboard.left_shift | Keyboard.right_shift) &&
                    view == julia &&
                    options.coloring_methods[2] != :preperiod
-                z = complex(mouseposition(scene)...)
+                z = complex(mp...)
                 i = attractor_index(z, julia, d_system, options)
 
                 i == 0 && (return Consume(true))
@@ -1358,32 +1350,28 @@ function add_frame_events!(
         end
 
         if event.button == Mouse.left && event.action == Mouse.release
-            dragging && update_point(mp)
+            dragging && update_point!(julia, view, mp, d_system, options)
             dragging = false
         end
 
         return Consume(false)
     end
 
-    on(events(scene).mouseposition) do event
-        is_topframe(axis) || return Consume(false)
+    frame.events[:mousemove] = on(events(scene).mouseposition) do event
+        is_mouseover(view, other_view) || return Consume(false)
         dragging || return Consume(false)
 
-        view = frame.view[]
         mp = mouseposition(scene)
-        plane_type = get_plane_type(view)
 
-        if plane_type == DynamicalPlane && options.drag_setting != :neither
-            update_point(mp)
-        elseif plane_type == ParameterPlane && options.drag_setting == :both
-            update_point(mp)
+        if (plane_type == DynamicalPlane && options.drag_setting != :neither) ||
+           (plane_type == ParameterPlane && options.drag_setting == :both)
+            update_point!(julia, view, mp, d_system, options)
         end
     end
 
     # Keyboard Events
-    on(events(scene).keyboardbutton) do event
-        is_topframe(axis) || return Consume(false)
-        view = frame.view[]
+    frame.events[:keyboardpress] = on(events(scene).keyboardbutton) do event
+        is_mouseover(view, other_view) || return Consume(false)
 
         if ispressed(scene, (Keyboard.left_control | Keyboard.right_control) & Keyboard.s)
             format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
@@ -1418,16 +1406,7 @@ function add_frame_events!(
     end
 end
 
-function add_buttons!(
-    figure,
-    left_frame,
-    right_frame,
-    mandel,
-    julia,
-    d_system,
-    options,
-    show_rays,
-)
+function add_buttons!(figure, mandel, julia, d_system, options, show_rays)
     layout = GridLayout(figure[2, 1], tellwidth = false)
     button_shift = options.is_family ? 2 : 0
 
@@ -1545,37 +1524,77 @@ function add_buttons!(
         inputs[:switch_layout] = Button(layout[1, 1], label = "↰", halign = :left)
         inputs[:switch_positions] = Button(layout[1, 2], label = "↔", halign = :left)
 
-        on(inputs[:switch_layout].clicks, priority = 200) do event
+        on(inputs[:switch_layout].clicks, priority = 200) do _
+            topframe, bottomframe =
+                mandel.is_topview ? (mandel.frame, julia.frame) :
+                (julia.frame, mandel.frame)
+
+            options.compact_view = !options.compact_view
             if options.compact_view
-                left_frame.axis.width = nothing
-                left_frame.axis.height = nothing
-                left_frame.axis.valign = :center
-                left_frame.axis.halign = :center
+                topframe.axis.width = nothing
+                topframe.axis.height = Relative(0.3)
+                topframe.axis.valign = 0.03
+                topframe.axis.halign = 0.03
+                topframe.axis.aspect = AxisAspect(1)
 
-                figure[1, 1][1, 1] = left_frame.axis
-                figure[1, 1][1, 2] = right_frame.axis
-
-                inputs[:switch_layout].label = "↳"
-            else
-                left_frame.axis.width = Relative(0.3)
-                left_frame.axis.height = Relative(0.3)
-                left_frame.axis.valign = 0.01
-                left_frame.axis.halign = 0.01
-
-                figure[1, 1][1, 1] = left_frame.axis
-                figure[1, 1][1, 1] = right_frame.axis
+                figure[1, 1][1, 1] = topframe.axis
+                figure[1, 1][1, 1] = bottomframe.axis
 
                 trim!(contents(figure[1, 1])...)
                 inputs[:switch_layout].label = "↰"
-            end
+            else
+                topframe.axis.width = nothing
+                topframe.axis.height = nothing
+                topframe.axis.valign = :center
+                topframe.axis.halign = :center
+                topframe.axis.aspect = AxisAspect(1)
 
-            options.compact_view = !options.compact_view
+                figure[1, 1][1, 1] = topframe.axis
+                figure[1, 1][1, 2] = bottomframe.axis
+
+                inputs[:switch_layout].label = "↳"
+            end
         end
 
-        on(inputs[:switch_positions].clicks, priority = 200) do event
-            left_frame.view[], right_frame.view[] = right_frame.view[], left_frame.view[]
-            create_plot!(left_frame, d_system, options)
-            create_plot!(right_frame, d_system, options)
+        on(inputs[:switch_positions].clicks, priority = 200) do _
+            mandel.is_topview, julia.is_topview = julia.is_topview, mandel.is_topview
+
+            topframe, bottomframe =
+                mandel.is_topview ? (mandel.frame, julia.frame) :
+                (julia.frame, mandel.frame)
+
+            translate_axis!(topframe.axis, 15)
+            translate_axis!(bottomframe.axis, 0)
+
+            if options.compact_view
+                topframe.axis.width = Relative(0.3)
+                topframe.axis.height = Relative(0.3)
+                topframe.axis.valign = 0.03
+                topframe.axis.halign = 0.03
+                topframe.axis.aspect = AxisAspect(1)
+
+                bottomframe.axis.width = nothing
+                bottomframe.axis.height = nothing
+                bottomframe.axis.valign = :center
+                bottomframe.axis.halign = :center
+                bottomframe.axis.aspect = AxisAspect(1)
+
+                figure[1, 1][1, 1] = topframe.axis
+                figure[1, 1][1, 1] = bottomframe.axis
+
+                trim!(contents(figure[1, 1])...)
+            else
+                for frame in [bottomframe, topframe]
+                    frame.axis.width = nothing
+                    frame.axis.height = nothing
+                    frame.axis.valign = :center
+                    frame.axis.halign = :center
+                    frame.axis.aspect = AxisAspect(1)
+                end
+
+                figure[1, 1][1, 1] = topframe.axis
+                figure[1, 1][1, 2] = bottomframe.axis
+            end
         end
     end
 
@@ -1736,8 +1755,6 @@ struct Viewer
     options::Options
 
     figure::Figure
-    left_frame::Union{Nothing,Frame}
-    right_frame::Frame
 
     mandel::Union{Nothing,View}
     julia::View
@@ -1788,9 +1805,12 @@ struct Viewer
         julia_coloring =
             get_coloring_data(d_system.map, c, coloring_methods[2], projective_metrics[2])
 
+        mandel_frame, julia_frame = create_frames!(figure, options)
+
         mandel =
             !is_family ? nothing :
             View(
+                frame = mandel_frame,
                 center = mandel_center,
                 diameter = mandel_diameter,
                 pixels = grid_width,
@@ -1798,6 +1818,7 @@ struct Viewer
             )
 
         julia = View(
+            frame = julia_frame,
             center = julia_center,
             diameter = julia_diameter,
             parameter = c,
@@ -1814,42 +1835,19 @@ struct Viewer
         julia.rays = []
         pick_orbit!(julia, d_system, options, julia.points[][begin])
 
-        left_frame, right_frame = create_frames!(figure, options, mandel, julia)
-
         if is_family
-            add_frame_events!(figure, right_frame, left_frame, d_system, options, julia)
-            add_frame_events!(figure, left_frame, left_frame, d_system, options, julia)
-
-            create_plot!(left_frame, d_system, options)
+            add_frame_events!(figure, mandel, julia, d_system, options)
+            create_plot!(mandel, d_system, options)
             mandel.points[] = [get_parameter(julia)]
-        else
-            add_frame_events!(figure, right_frame, right_frame, d_system, options, julia)
         end
 
-        create_plot!(right_frame, d_system, options)
+        add_frame_events!(figure, julia, mandel, d_system, options)
+        create_plot!(julia, d_system, options)
 
         colgap!(content(figure[1, 1]), 10)
-        inputs = add_buttons!(
-            figure,
-            left_frame,
-            right_frame,
-            mandel,
-            julia,
-            d_system,
-            options,
-            show_rays,
-        )
+        inputs = add_buttons!(figure, mandel, julia, d_system, options, show_rays)
 
-        return new(
-            d_system,
-            options,
-            figure,
-            left_frame,
-            right_frame,
-            mandel,
-            julia,
-            inputs,
-        )
+        return new(d_system, options, figure, mandel, julia, inputs)
     end
 end
 
@@ -1907,7 +1905,7 @@ function change_color!(figure, julia, i, d_system, options)
         color = cs,
         shading = NoShading,
     )
-    ax.gridz[] = 200
+    ax.gridz[] = 400
 
     attractors = julia.coloring_data.attractors
     colors = [attractor.color for attractor in attractors if !isa(attractor.color, Symbol)]
