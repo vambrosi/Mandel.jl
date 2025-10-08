@@ -815,28 +815,40 @@ end
 
 @enum PlaneType Parameter Dynamical
 
-struct ComplexGrid
-    xlims::Tuple{Float64,Float64}
-    ylims::Tuple{Float64,Float64}
+struct Viewbox
+    xlimits::Tuple{Float64,Float64}
+    ylimits::Tuple{Float64,Float64}
     parameter::ComplexF64
     plane_type::PlaneType
     pixels::Int
 end
 
-function corner_and_steps(grid::ComplexGrid)
-    xstep = (grid.xlims[2] - grid.xlims[1]) / grid.pixels
-    ystep = (grid.ylims[2] - grid.ylims[1]) / grid.pixels
+function Viewbox(center::Number, diameter::Number, args...)
+    radius = diameter / 2
 
-    corner = complex(grid.xlims[1] + xstep / 2, grid.ylims[1] + ystep / 2)
+    xlimits = real(center) - radius, real(center) + radius
+    ylimits = imag(center) - radius, imag(center) + radius
+
+    return Viewbox(xlimits, ylimits, args...)
+end
+
+Viewbox(xlimits, ylimits, box::Viewbox) =
+    Viewbox(xlimits, ylimits, box.parameter, box.plane_type, box.pixels)
+
+function corner_and_steps(box::Viewbox)
+    xstep = (box.xlimits[2] - box.xlimits[1]) / box.pixels
+    ystep = (box.ylimits[2] - box.ylimits[1]) / box.pixels
+
+    corner = complex(box.xlimits[1] + xstep / 2, box.ylimits[1] + ystep / 2)
     return corner, xstep, ystep
 end
 
-function center_lims(grid::ComplexGrid)
-    xhalfstep = (grid.xlims[2] - grid.xlims[1]) / grid.pixels / 2
-    yhalfstep = (grid.ylims[2] - grid.ylims[1]) / grid.pixels / 2
+function center_lims(box::Viewbox)
+    xhalfstep = (box.xlimits[2] - box.xlimits[1]) / box.pixels / 2
+    yhalfstep = (box.ylimits[2] - box.ylimits[1]) / box.pixels / 2
 
-    xmin, xmax = grid.xlims[1] + xhalfstep, grid.xlims[2] - xhalfstep
-    ymin, ymax = grid.ylims[1] + yhalfstep, grid.ylims[2] - yhalfstep
+    xmin, xmax = box.xlimits[1] + xhalfstep, box.xlimits[2] - xhalfstep
+    ymin, ymax = box.ylimits[1] + yhalfstep, box.ylimits[2] - yhalfstep
 
     return xmin, xmax, ymin, ymax
 end
@@ -865,12 +877,9 @@ mutable struct Options
 end
 
 mutable struct MandelView <: View
-    center::ComplexF64
-    diameter::Float64
-    pixels::Int
-
-    init_center::ComplexF64
-    init_diameter::Float64
+    box::Viewbox
+    init_box::Viewbox
+    lock::ReentrantLock
 
     colors::Matrix{RGBA{Float64}}
     points::Observable{Vector{ComplexF64}}
@@ -887,17 +896,16 @@ mutable struct MandelView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
+        box = Viewbox(center, diameter, 0.0im, Parameter, pixels)
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
-            center,
-            diameter,
-            pixels,
-            center,
-            diameter,
+            box,
+            box,
+            ReentrantLock(),
             colors,
             points,
             marks,
@@ -912,13 +920,9 @@ mutable struct MandelView <: View
 end
 
 mutable struct JuliaView <: View
-    center::ComplexF64
-    diameter::Float64
-    parameter::ComplexF64
-    pixels::Int
-
-    init_center::ComplexF64
-    init_diameter::Float64
+    box::Viewbox
+    init_box::Viewbox
+    lock::ReentrantLock
 
     colors::Matrix{RGBA{Float64}}
     points::Observable{Vector{ComplexF64}}
@@ -934,18 +938,16 @@ mutable struct JuliaView <: View
         diameter > 0.0 || throw("diameter must be a positive real")
         pixels > 0 || throw("pixels must be a positive integer")
 
+        box = Viewbox(center, diameter, parameter, Dynamical, pixels)
         colors = zeros(RGBA{Float64}, pixels, pixels)
         points = ComplexF64[center]
         marks = Observable{Vector{ComplexF64}}[]
         rays = Observable{Vector{ComplexF64}}[]
 
         return new(
-            center,
-            diameter,
-            parameter,
-            pixels,
-            center,
-            diameter,
+            box,
+            box,
+            ReentrantLock(),
             colors,
             points,
             marks,
@@ -958,6 +960,32 @@ mutable struct JuliaView <: View
         )
     end
 end
+
+get_parameter(view::View) = @lock view.lock view.box.parameter
+get_viewbox(view::View) = @lock view.lock view.box
+get_colors(view::View) = @lock view.lock view.colors
+
+function set_parameter!(view::View, parameter)
+    box = Viewbox(
+        view.box.xlimits,
+        view.box.ylimits,
+        parameter,
+        view.box.plane_type,
+        view.box.pixels,
+    )
+
+    lock(view.lock) do
+        view.box = box
+        view.init_box = box
+    end
+
+    return view
+end
+
+set_viewbox!(view::View, box) = @lock view.lock view.box = box
+set_colors!(view::View, colors) = @lock view.lock view.colors = colors
+
+reset_viewbox!(view::View) = @lock view.lock view.box = view.init_box
 
 # --------------------------------------------------------------------------------------- #
 # Change of Coordinates
@@ -980,7 +1008,7 @@ function pick_orbit!(
     options::Options,
     z::Number,
 )
-    julia.points[] = orbit(d_system.map, z, julia.parameter, options.orbit_length - 1)
+    julia.points[] = orbit(d_system.map, z, get_parameter(julia), options.orbit_length - 1)
     return julia
 end
 
@@ -1017,27 +1045,27 @@ function slice!(colors, j, x, ymin, ymax, pixels, f, crit::Function, coloring_da
 end
 
 function draw_grid(
-    grid::ComplexGrid,
+    box::Viewbox,
     coloring_data::ColoringData,
     d_system::DynamicalSystem,
     options::Options,
 )
-    futures = Vector{Task}(undef, grid.pixels)
-    colors = Matrix{RGBA{Float64}}(undef, grid.pixels, grid.pixels)
+    futures = Vector{Task}(undef, box.pixels)
+    colors = Matrix{RGBA{Float64}}(undef, box.pixels, box.pixels)
 
-    xmin, xmax, ymin, ymax = center_lims(grid)
+    xmin, xmax, ymin, ymax = center_lims(box)
 
-    if grid.plane_type == Dynamical
-        parameter = convert(attractor_type(coloring_data), grid.parameter)
+    if box.plane_type == Dynamical
+        parameter = convert(attractor_type(coloring_data), box.parameter)
 
-        for (j, x) in enumerate(LinRange(xmin, xmax, grid.pixels))
+        for (j, x) in enumerate(LinRange(xmin, xmax, box.pixels))
             futures[j] = Threads.@spawn slice!(
                 colors,
                 j,
                 x,
                 ymin,
                 ymax,
-                grid.pixels,
+                box.pixels,
                 d_system.map,
                 parameter,
                 coloring_data,
@@ -1045,14 +1073,14 @@ function draw_grid(
             )
         end
     else
-        for (j, x) in enumerate(LinRange(xmin, xmax, grid.pixels))
+        for (j, x) in enumerate(LinRange(xmin, xmax, box.pixels))
             futures[j] = Threads.@spawn slice!(
                 colors,
                 j,
                 x,
                 ymin,
                 ymax,
-                grid.pixels,
+                box.pixels,
                 d_system.map,
                 d_system.critical_point,
                 coloring_data,
@@ -1066,7 +1094,7 @@ function draw_grid(
 end
 
 function set_marks!(d_system::DynamicalSystem, julia::JuliaView, options::Options)
-    c = julia.parameter
+    c = get_parameter(julia)
     zs = d_system.critical_point(c)
 
     for (z, z_orbit) in zip(zs, julia.marks)
@@ -1081,20 +1109,20 @@ function pick_parameter!(
     options::Options,
     point,
 )
-    julia.parameter = point
+    set_parameter!(julia, point)
     set_marks!(d_system, julia, options)
 
     julia.rays = []
     julia.refresh_rays()
 
-    mandel.points[] = [julia.parameter]
+    mandel.points[] = [get_parameter(julia)]
 
     coloring_data = julia.coloring_data
     if coloring_data.update_attractors
         T = attractor_type(coloring_data)
         attractor_list = get_attractors(
             d_system.map,
-            julia.parameter,
+            get_parameter(julia),
             projective = (T == Point),
             ε = options.convergence_radius / 1000,
         )
@@ -1188,20 +1216,6 @@ function delete_plots!(frame::Frame)
     # TODO: rays
 end
 
-function get_image(view, d_system, options)
-    radius = view.diameter / 2
-
-    xlim = real(view.center) - radius, real(view.center) + radius
-    ylim = imag(view.center) - radius, imag(view.center) + radius
-
-    grid =
-        view isa JuliaView ?
-        ComplexGrid(xlim, ylim, view.parameter, Dynamical, view.pixels) :
-        ComplexGrid(xlim, ylim, 0.0im, Parameter, view.pixels)
-
-    return xlim, ylim, draw_grid(grid, view.coloring_data, d_system, options)
-end
-
 function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
     delete_plots!(frame)
     view = frame.view[]
@@ -1268,43 +1282,44 @@ function create_plot!(frame::Frame, d_system::DynamicalSystem, options::Options)
 
     # Computing the initial plot
     # This is done last or else plotting the points would change the limits and trigger a redraw
-    xlim, ylim, colors = get_image(view, d_system, options)
-    view.colors = colors
-
-    img = image!(frame.axis, xlim, ylim, colors, inspectable = false, interpolate = false)
-    limits!(frame.axis, xlim, ylim)
+    box = get_viewbox(view)
+    colors = set_colors!(view, draw_grid(box, view.coloring_data, d_system, options))
+    img = image!(
+        frame.axis,
+        view.box.xlimits,
+        view.box.ylimits,
+        colors,
+        inspectable = false,
+        interpolate = false,
+    )
+    limits!(frame.axis, box.xlimits, box.ylimits)
 
     # The image plot needs to be below all the other plots
     translate!(img, 0, 0, -1)
 
     # Notify refresh_view triggers an update of the plot
     frame.events[:force_refresh] = on(view.refresh_view) do _
-        xlim, ylim, colors = get_image(view, d_system, options)
-        Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
-        limits!(frame.axis, xlim, ylim)
-        view.colors = colors
+        box = get_viewbox(view)
+        colors =
+            set_colors!(view, draw_grid(box, view.coloring_data, d_system, options))
+        Makie.update!(img.attributes, arg1 = box.xlimits, arg2 = box.ylimits, arg3 = colors)
+        limits!(frame.axis, box.xlimits, box.ylimits)
     end
 
     # Update the plot when the view changes
     limits_obs = async_latest(frame.axis.finallimits)
-    frame.events[:limits_refresh] = on(limits_obs) do box
-        center = box.origin + box.widths / 2
-        radius = max(box.widths...) / 2
+    frame.events[:limits_refresh] = on(limits_obs) do rectangle
+        xlimits = rectangle.origin[1], rectangle.origin[1] + rectangle.widths[1]
+        ylimits = rectangle.origin[2], rectangle.origin[2] + rectangle.widths[2]
 
-        xlim = center[1] - radius, center[1] + radius
-        ylim = center[2] - radius, center[2] + radius
+        box = get_viewbox(view)
+        set_viewbox!(view, Viewbox(xlimits, ylimits, box))
 
-        grid =
-            view isa JuliaView ?
-            ComplexGrid(xlim, ylim, view.parameter, Dynamical, view.pixels) :
-            ComplexGrid(xlim, ylim, 0.0im, Parameter, view.pixels)
-
-        colors = draw_grid(grid, view.coloring_data, d_system, options)
-        Makie.update!(img.attributes, arg1 = xlim, arg2 = ylim, arg3 = colors)
-
-        view.colors = colors
-        view.center = complex(center...)
-        view.diameter = 2 * radius
+        colors = set_colors!(
+            view,
+            draw_grid(view.box, view.coloring_data, d_system, options),
+        )
+        Makie.update!(img.attributes, arg1 = xlimits, arg2 = ylimits, arg3 = colors)
     end
 
     return frame
@@ -1318,7 +1333,7 @@ function save_view(filename::String, view::View)
     hidedecorations!(ax)
     hidespines!(ax)
 
-    image!(ax, view.colors)
+    image!(ax, get_colors(view))
 
     Makie.save(filename, fig)
 end
@@ -1336,7 +1351,6 @@ function add_frame_events!(
 )
     axis = frame.axis
     scene = axis.scene
-    view = frame.view[]
 
     # Mouse Events
     dragging = false
@@ -1346,6 +1360,8 @@ function add_frame_events!(
 
     function update_point(mp)
         point = complex(mp...)
+        view = frame.view[]
+
         if view isa MandelView
             pick_parameter!(julia, view, d_system, options, point)
             refresh!(julia)
@@ -1356,12 +1372,13 @@ function add_frame_events!(
 
     on(events(scene).mousebutton) do event
         is_topframe(axis) || return Consume(false)
+
+        view = frame.view[]
         mp = mouseposition(scene)
 
         if event.button == Mouse.left && event.action == Mouse.press
             if ispressed(scene, Keyboard.left_control | Keyboard.right_control)
-                view.center = view.init_center
-                view.diameter = view.init_diameter
+                reset_viewbox!(view)
                 refresh!(view)
                 return Consume(true)
 
@@ -1392,6 +1409,7 @@ function add_frame_events!(
         is_topframe(axis) || return Consume(false)
         dragging || return Consume(false)
 
+        view = frame.view[]
         mp = mouseposition(scene)
 
         if view isa JuliaView && options.drag_setting != :neither
@@ -1404,6 +1422,7 @@ function add_frame_events!(
     # Keyboard Events
     on(events(scene).keyboardbutton) do event
         is_topframe(axis) || return Consume(false)
+        view = frame.view[]
 
         if ispressed(scene, (Keyboard.left_control | Keyboard.right_control) & Keyboard.s)
             format = Dates.dateformat"yyyy-mm-ddTHH.MM.SS"
@@ -1512,7 +1531,7 @@ function add_buttons!(
         on(inputs[:rays].clicks, priority = 200) do event
             inputs[:rays].label = "X"
 
-            new_rays = rays(d_system.map, julia.parameter, julia.show_rays, options)
+            new_rays = rays(d_system.map, get_parameter(julia), julia.show_rays, options)
             julia.rays = [Observable(ray) for ray in new_rays]
             julia.refresh_rays()
 
@@ -1545,7 +1564,7 @@ function add_buttons!(
             T = attractor_type(coloring_data)
             attractor_list = get_attractors(
                 d_system.map,
-                julia.parameter,
+                get_parameter(julia),
                 projective = (T == Point),
                 ε = options.convergence_radius / 1000,
             )
@@ -1841,7 +1860,7 @@ struct Viewer
             add_frame_events!(figure, left_frame, left_frame, d_system, options, julia)
 
             create_plot!(left_frame, d_system, options)
-            mandel.points[] = [julia.parameter]
+            mandel.points[] = [get_parameter(julia)]
         else
             add_frame_events!(figure, right_frame, right_frame, d_system, options, julia)
         end
@@ -1875,21 +1894,21 @@ end
 
 Base.show(io::IO, viewer::Viewer) = display(GLMakie.Screen(), viewer.figure)
 
-function get_attractors(viewer::Viewer)
-    attractors =
-        viewer.julia.coloring_data.update_attractors ?
-        viewer.julia.coloring_data.attractors :
-        get_attractors(viewer.d_system.map, viewer.julia.parameter)
-
-    return attractors
-end
-
 """
     get_parameter(viewer::Viewer)
 
 Get the parameter used to plot the Julia set in `viewer`.
 """
-get_parameter(viewer::Viewer) = viewer.julia.parameter
+get_parameter(viewer::Viewer) = get_parameter(viewer.julia)
+
+function get_attractors(viewer::Viewer)
+    attractors =
+        viewer.julia.coloring_data.update_attractors ?
+        viewer.julia.coloring_data.attractors :
+        get_attractors(viewer.d_system.map, get_parameter(viewer))
+
+    return attractors
+end
 
 function change_color!(julia, i, chroma, hue, d_system, options)
     isempty(julia.coloring_data.attractors) &&
