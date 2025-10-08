@@ -813,7 +813,7 @@ end
 # Views of Mandelbrot and Julia Sets
 # --------------------------------------------------------------------------------------- #
 
-@enum PlaneType Parameter Dynamical
+@enum PlaneType ParameterPlane DynamicalPlane
 
 struct Viewbox
     xlimits::Tuple{Float64,Float64}
@@ -831,6 +831,9 @@ function Viewbox(center::Number, diameter::Number, args...)
 
     return Viewbox(xlimits, ylimits, args...)
 end
+
+Viewbox(parameter::Number, box::Viewbox) =
+    Viewbox(box.xlimits, box.ylimits, parameter, box.plane_type, box.pixels)
 
 Viewbox(xlimits, ylimits, box::Viewbox) =
     Viewbox(xlimits, ylimits, box.parameter, box.plane_type, box.pixels)
@@ -853,8 +856,6 @@ function center_lims(box::Viewbox)
     return xmin, xmax, ymin, ymax
 end
 
-abstract type View end
-
 mutable struct ColoringScheme
     color::Union{Symbol,LCHab}
     palette::Vector{RGBA{Float64}}
@@ -876,7 +877,7 @@ mutable struct Options
     drag_setting::Symbol
 end
 
-mutable struct MandelView <: View
+mutable struct View
     box::Viewbox
     init_box::Viewbox
     lock::ReentrantLock
@@ -891,92 +892,56 @@ mutable struct MandelView <: View
     coloring_data::ColoringData
     show_rays::Any
     refresh_view::Observable{Nothing}
-
-    function MandelView(; center, diameter, pixels, coloring_data)
-        diameter > 0.0 || throw("diameter must be a positive real")
-        pixels > 0 || throw("pixels must be a positive integer")
-
-        box = Viewbox(center, diameter, 0.0im, Parameter, pixels)
-        colors = zeros(RGBA{Float64}, pixels, pixels)
-        points = ComplexF64[center]
-        marks = Observable{Vector{ComplexF64}}[]
-        rays = Observable{Vector{ComplexF64}}[]
-
-        return new(
-            box,
-            box,
-            ReentrantLock(),
-            colors,
-            points,
-            marks,
-            rays,
-            Vector{Any}[],
-            () -> nothing,
-            coloring_data,
-            0,
-            nothing,
-        )
-    end
 end
 
-mutable struct JuliaView <: View
-    box::Viewbox
-    init_box::Viewbox
-    lock::ReentrantLock
+function View(;
+    center,
+    diameter,
+    pixels,
+    coloring_data,
+    parameter = nothing,
+    show_rays = nothing,
+)
+    diameter > 0.0 || throw("diameter must be a positive real")
+    pixels > 0 || throw("pixels must be a positive integer")
 
-    colors::Matrix{RGBA{Float64}}
-    points::Observable{Vector{ComplexF64}}
-    marks::Vector{Observable{Vector{ComplexF64}}}
-    rays::Vector{Observable{Vector{ComplexF64}}}
-    line_refs::Vector{Any}
-    refresh_rays::Function
-    coloring_data::ColoringData
-    show_rays::Any
-    refresh_view::Observable{Nothing}
+    box =
+        isnothing(parameter) ? Viewbox(center, diameter, 0.0im, ParameterPlane, pixels) :
+        Viewbox(center, diameter, parameter, DynamicalPlane, pixels)
 
-    function JuliaView(; center, diameter, parameter, pixels, coloring_data, show_rays)
-        diameter > 0.0 || throw("diameter must be a positive real")
-        pixels > 0 || throw("pixels must be a positive integer")
+    colors = zeros(RGBA{Float64}, pixels, pixels)
+    points = ComplexF64[center]
+    marks = Observable{Vector{ComplexF64}}[]
+    rays = Observable{Vector{ComplexF64}}[]
 
-        box = Viewbox(center, diameter, parameter, Dynamical, pixels)
-        colors = zeros(RGBA{Float64}, pixels, pixels)
-        points = ComplexF64[center]
-        marks = Observable{Vector{ComplexF64}}[]
-        rays = Observable{Vector{ComplexF64}}[]
-
-        return new(
-            box,
-            box,
-            ReentrantLock(),
-            colors,
-            points,
-            marks,
-            rays,
-            Vector{Any}[],
-            () -> nothing,
-            coloring_data,
-            show_rays,
-            nothing,
-        )
-    end
+    return View(
+        box,
+        box,
+        ReentrantLock(),
+        colors,
+        points,
+        marks,
+        rays,
+        Vector{Any}[],
+        () -> nothing,
+        coloring_data,
+        show_rays,
+        nothing,
+    )
 end
 
 get_parameter(view::View) = @lock view.lock view.box.parameter
 get_viewbox(view::View) = @lock view.lock view.box
 get_colors(view::View) = @lock view.lock view.colors
+get_plane_type(view::View) = @lock view.lock view.box.plane_type
 
 function set_parameter!(view::View, parameter)
-    box = Viewbox(
-        view.box.xlimits,
-        view.box.ylimits,
-        parameter,
-        view.box.plane_type,
-        view.box.pixels,
-    )
+    box = Viewbox(parameter, view.box)
+    init_box = Viewbox(parameter, view.init_box)
 
     lock(view.lock) do
         view.box = box
-        view.init_box = box
+        view.init_box = init_box
     end
 
     return view
@@ -1002,12 +967,7 @@ end
 # Updating Plots
 # --------------------------------------------------------------------------------------- #
 
-function pick_orbit!(
-    julia::JuliaView,
-    d_system::DynamicalSystem,
-    options::Options,
-    z::Number,
-)
+function pick_orbit!(julia::View, d_system::DynamicalSystem, options::Options, z::Number)
     julia.points[] = orbit(d_system.map, z, get_parameter(julia), options.orbit_length - 1)
     return julia
 end
@@ -1055,7 +1015,7 @@ function draw_grid(
 
     xmin, xmax, ymin, ymax = center_lims(box)
 
-    if box.plane_type == Dynamical
+    if box.plane_type == DynamicalPlane
         parameter = convert(attractor_type(coloring_data), box.parameter)
 
         for (j, x) in enumerate(LinRange(xmin, xmax, box.pixels))
@@ -1093,7 +1053,7 @@ function draw_grid(
     return colors
 end
 
-function set_marks!(d_system::DynamicalSystem, julia::JuliaView, options::Options)
+function set_marks!(d_system::DynamicalSystem, julia::View, options::Options)
     c = get_parameter(julia)
     zs = d_system.critical_point(c)
 
@@ -1103,8 +1063,8 @@ function set_marks!(d_system::DynamicalSystem, julia::JuliaView, options::Option
 end
 
 function pick_parameter!(
-    julia::JuliaView,
-    mandel::MandelView,
+    julia::View,
+    mandel::View,
     d_system::DynamicalSystem,
     options::Options,
     point,
@@ -1167,7 +1127,7 @@ function create_frames!(figure, options, mandel::Nothing, julia)
     return nothing, Frame(axis, julia, Dict())
 end
 
-function create_frames!(figure, options, mandel::MandelView, julia)
+function create_frames!(figure, options, mandel, julia)
     left_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
     right_axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
     translate_axis!(left_axis, 100)
@@ -1347,7 +1307,7 @@ function add_frame_events!(
     insetframe::Frame,
     d_system::DynamicalSystem,
     options::Options,
-    julia::JuliaView,
+    julia::View,
 )
     axis = frame.axis
     scene = axis.scene
@@ -1362,10 +1322,10 @@ function add_frame_events!(
         point = complex(mp...)
         view = frame.view[]
 
-        if view isa MandelView
+        if get_plane_type(view) == ParameterPlane
             pick_parameter!(julia, view, d_system, options, point)
             refresh!(julia)
-        elseif view isa JuliaView
+        else
             pick_orbit!(view, d_system, options, point)
         end
     end
@@ -1411,10 +1371,11 @@ function add_frame_events!(
 
         view = frame.view[]
         mp = mouseposition(scene)
+        plane_type = get_plane_type(view)
 
-        if view isa JuliaView && options.drag_setting != :neither
+        if plane_type == DynamicalPlane && options.drag_setting != :neither
             update_point(mp)
-        elseif view isa MandelView && options.drag_setting == :both
+        elseif plane_type == ParameterPlane && options.drag_setting == :both
             update_point(mp)
         end
     end
@@ -1778,8 +1739,8 @@ struct Viewer
     left_frame::Union{Nothing,Frame}
     right_frame::Frame
 
-    mandel::Union{Nothing,MandelView}
-    julia::JuliaView
+    mandel::Union{Nothing,View}
+    julia::View
     inputs::Dict{Symbol,Any}
 
     function Viewer(
@@ -1829,14 +1790,14 @@ struct Viewer
 
         mandel =
             !is_family ? nothing :
-            MandelView(
+            View(
                 center = mandel_center,
                 diameter = mandel_diameter,
                 pixels = grid_width,
                 coloring_data = mandel_coloring,
             )
 
-        julia = JuliaView(
+        julia = View(
             center = julia_center,
             diameter = julia_diameter,
             parameter = c,
