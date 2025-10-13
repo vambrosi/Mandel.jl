@@ -387,7 +387,18 @@ function convergence_time(
     ε::Float64,
     max_iterations::Int,
 ) where {T<:PointLike}
-    return convergence_time(f, [z], c, attractors, ε, max_iterations)
+    for iteration in 0:max_iterations
+        for attractor in attractors
+            near, d, shift = is_nearby(z, attractor.cycle, ε)
+            near && (return iteration, d, attractor, shift)
+        end
+
+        for i in eachindex(z)
+            z = f(z, c)
+        end
+    end
+
+    return max_iterations + 1, ε, empty_attractor, 0
 end
 
 struct CloseBy
@@ -815,43 +826,31 @@ end
 
 @enum PlaneType ParameterPlane DynamicalPlane
 
-struct Viewbox
+mutable struct Viewbox
     xlimits::Tuple{Float64,Float64}
     ylimits::Tuple{Float64,Float64}
     parameter::ComplexF64
     plane_type::PlaneType
-    pixels::Int
 end
 
-function Viewbox(center::Number, diameter::Number, args...)
-    radius = diameter / 2
+function Viewbox(center::Number, diameter::Number, pixel_size, args...)
+    px_diameter = min(pixel_size...)
 
-    xlimits = real(center) - radius, real(center) + radius
-    ylimits = imag(center) - radius, imag(center) + radius
+    xradius = diameter / 2 * pixel_size[1] / px_diameter
+    yradius = diameter / 2 * pixel_size[2] / px_diameter
+
+    xlimits = real(center) - xradius, real(center) + xradius
+    ylimits = imag(center) - yradius, imag(center) + yradius
 
     return Viewbox(xlimits, ylimits, args...)
 end
 
-Viewbox(parameter::Number, box::Viewbox) =
-    Viewbox(box.xlimits, box.ylimits, parameter, box.plane_type, box.pixels)
+function center_lims(xlimits, ylimits, pixel_size)
+    xhalfstep = (xlimits[2] - xlimits[1]) / (2 * pixel_size[1])
+    yhalfstep = (ylimits[2] - ylimits[1]) / (2 * pixel_size[2])
 
-Viewbox(xlimits, ylimits, box::Viewbox) =
-    Viewbox(xlimits, ylimits, box.parameter, box.plane_type, box.pixels)
-
-function corner_and_steps(box::Viewbox)
-    xstep = (box.xlimits[2] - box.xlimits[1]) / box.pixels
-    ystep = (box.ylimits[2] - box.ylimits[1]) / box.pixels
-
-    corner = complex(box.xlimits[1] + xstep / 2, box.ylimits[1] + ystep / 2)
-    return corner, xstep, ystep
-end
-
-function center_lims(box::Viewbox)
-    xhalfstep = (box.xlimits[2] - box.xlimits[1]) / box.pixels / 2
-    yhalfstep = (box.ylimits[2] - box.ylimits[1]) / box.pixels / 2
-
-    xmin, xmax = box.xlimits[1] + xhalfstep, box.xlimits[2] - xhalfstep
-    ymin, ymax = box.ylimits[1] + yhalfstep, box.ylimits[2] - yhalfstep
+    xmin, xmax = xlimits[1] + xhalfstep, xlimits[2] - xhalfstep
+    ymin, ymax = ylimits[1] + yhalfstep, ylimits[2] - yhalfstep
 
     return xmin, xmax, ymin, ymax
 end
@@ -880,6 +879,7 @@ end
 mutable struct Frame
     axis::Axis
     events::Dict{Symbol,Any}
+    plots::Dict{Symbol,Any}
 end
 
 mutable struct View
@@ -907,23 +907,22 @@ function View(;
     frame,
     center,
     diameter,
-    pixels,
     coloring_data,
     parameter = nothing,
     show_rays = nothing,
 )
     diameter > 0.0 || throw("diameter must be a positive real")
-    pixels > 0 || throw("pixels must be a positive integer")
+    size_pxs = get_size_pixels(frame)
 
     if isnothing(parameter)
-        box = Viewbox(center, diameter, 0.0im, ParameterPlane, pixels)
+        box = Viewbox(center, diameter, size_pxs, 0.0im, ParameterPlane)
         is_topview = true
     else
-        box = Viewbox(center, diameter, parameter, DynamicalPlane, pixels)
+        box = Viewbox(center, diameter, size_pxs, parameter, DynamicalPlane)
         is_topview = false
     end
 
-    colors = zeros(RGBA{Float64}, pixels, pixels)
+    colors = zeros(RGBA{Float64}, size_pxs...)
     points = ComplexF64[center]
     marks = Observable{Vector{ComplexF64}}[]
     rays = Observable{Vector{ComplexF64}}[]
@@ -931,7 +930,7 @@ function View(;
     return View(
         frame,
         box,
-        box,
+        deepcopy(box),
         ReentrantLock(),
         colors,
         points,
@@ -947,26 +946,33 @@ function View(;
 end
 
 get_parameter(view::View) = @lock view.lock view.box.parameter
-get_viewbox(view::View) = @lock view.lock view.box
+get_limits(view::View) = @lock view.lock (view.box.xlimits, view.box.ylimits)
 get_colors(view::View) = @lock view.lock view.colors
 get_plane_type(view::View) = @lock view.lock view.box.plane_type
 
-function set_parameter!(view::View, parameter)
-    box = Viewbox(parameter, view.box)
-    init_box = Viewbox(parameter, view.init_box)
+get_size_pixels(frame::Frame) = frame.axis.scene.viewport[].widths
+get_size_pixels(view::View) = get_size_pixels(view.frame)
 
+function set_parameter!(view::View, parameter)
     lock(view.lock) do
-        view.box = box
-        view.init_box = init_box
+        view.box.parameter = parameter
+        view.init_box.parameter = parameter
     end
 
     return view
 end
 
-set_viewbox!(view::View, box) = @lock view.lock view.box = box
-set_colors!(view::View, colors) = @lock view.lock view.colors = colors
+function set_limits!(view::View, xlimits, ylimits)
+    lock(view.lock) do
+        view.box.xlimits = xlimits
+        view.box.ylimits = ylimits
+    end
 
-reset_viewbox!(view::View) = @lock view.lock view.box = view.init_box
+    return view
+end
+
+set_colors!(view::View, colors) = @lock view.lock view.colors = colors
+reset_viewbox!(view::View) = @lock view.lock view.box = deepcopy(view.init_box)
 
 # --------------------------------------------------------------------------------------- #
 # Change of Coordinates
@@ -1020,53 +1026,66 @@ function slice!(colors, j, x, ymin, ymax, pixels, f, crit::Function, coloring_da
     return nothing
 end
 
-function draw_grid(
-    box::Viewbox,
-    coloring_data::ColoringData,
+function updated_grid!(
+    view::View,
     d_system::DynamicalSystem,
     options::Options,
+    xlimits,
+    ylimits,
 )
-    futures = Vector{Task}(undef, box.pixels)
-    colors = Matrix{RGBA{Float64}}(undef, box.pixels, box.pixels)
+    size_pxs = get_size_pixels(view)
 
-    xmin, xmax, ymin, ymax = center_lims(box)
+    # Does not compute update if limits changed
+    current_xlimits, current_ylimits = get_limits(view)
+    (current_xlimits != xlimits || current_ylimits != ylimits) && (return false)
 
-    if box.plane_type == DynamicalPlane
-        parameter = convert(attractor_type(coloring_data), box.parameter)
+    xmin, xmax, ymin, ymax = center_lims(xlimits, ylimits, size_pxs)
 
-        for (j, x) in enumerate(LinRange(xmin, xmax, box.pixels))
+    futures = Vector{Task}(undef, size_pxs[1])
+    colors = Matrix{RGBA{Float64}}(undef, size_pxs...)
+
+    if get_plane_type(view) == DynamicalPlane
+        parameter = convert(attractor_type(view.coloring_data), get_parameter(view))
+
+        for (j, x) in enumerate(LinRange(xmin, xmax, size_pxs[1]))
             futures[j] = Threads.@spawn slice!(
                 colors,
                 j,
                 x,
                 ymin,
                 ymax,
-                box.pixels,
+                size_pxs[2],
                 d_system.map,
                 parameter,
-                coloring_data,
+                view.coloring_data,
                 options,
             )
         end
     else
-        for (j, x) in enumerate(LinRange(xmin, xmax, box.pixels))
+        for (j, x) in enumerate(LinRange(xmin, xmax, size_pxs[1]))
             futures[j] = Threads.@spawn slice!(
                 colors,
                 j,
                 x,
                 ymin,
                 ymax,
-                box.pixels,
+                size_pxs[2],
                 d_system.map,
                 d_system.critical_point,
-                coloring_data,
+                view.coloring_data,
                 options,
             )
         end
     end
 
     wait.(futures)
-    return colors
+
+    # Same as before. Only the latest update should be recorded and displayed.
+    current_xlimits, current_ylimits = get_limits(view)
+    (current_xlimits != xlimits || current_ylimits != ylimits) && (return false)
+
+    set_colors!(view, colors)
+    return true
 end
 
 function set_marks!(d_system::DynamicalSystem, julia::View, options::Options)
@@ -1129,30 +1148,33 @@ end
 
 function create_frames!(figure, options)
     if !options.is_family
-        axis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
-        translate_axis!(axis, 0)
+        axis = Axis(figure[1, 1][1, 1], autolimitaspect = true)
+        translate_axis!(axis, 10)
 
         hidedecorations!(axis)
         deregister_interaction!(axis, :rectanglezoom)
 
-        return nothing, Frame(axis, Dict())
+        return nothing, Frame(axis, Dict(), Dict())
     end
 
-    topaxis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
-    bottomaxis = Axis(figure[1, 1][1, 1], aspect = AxisAspect(1))
+    topaxis = Axis(figure[1, 1][1, 1], autolimitaspect = true)
+    bottomaxis = Axis(figure[1, 1][1, 1], autolimitaspect = true)
+
     translate_axis!(topaxis, 15)
-    translate_axis!(bottomaxis, 0)
+    translate_axis!(bottomaxis, 10)
 
     if options.compact_view
         topaxis.width = Relative(0.3)
         topaxis.height = Relative(0.3)
         topaxis.valign = 0.03
         topaxis.halign = 0.03
+        topaxis.aspect = AxisAspect(1)
     else
         topaxis.width = nothing
         topaxis.height = nothing
         topaxis.valign = :center
         topaxis.halign = :center
+        topaxis.aspect = nothing
 
         figure[1, 1][1, 1] = topaxis
         figure[1, 1][1, 2] = bottomaxis
@@ -1163,10 +1185,10 @@ function create_frames!(figure, options)
         deregister_interaction!(axis, :rectanglezoom)
     end
 
-    return Frame(topaxis, Dict()), Frame(bottomaxis, Dict())
+    return Frame(topaxis, Dict(), Dict()), Frame(bottomaxis, Dict(), Dict())
 end
 
-function create_plot!(view::View, d_system::DynamicalSystem, options::Options)
+function create_plots!(view::View, d_system::DynamicalSystem, options::Options)
     frame = view.frame
 
     # Plotting orbit of the red point
@@ -1175,9 +1197,10 @@ function create_plot!(view::View, d_system::DynamicalSystem, options::Options)
         return Point2f.(xs, ys)
     end
 
-    lines!(frame.axis, point_vectors, color = (:red, 0.5), inspectable = false)
+    frame.plots[:point_lines] =
+        lines!(frame.axis, point_vectors, color = (:red, 0.5), inspectable = false)
 
-    scatter!(
+    frame.plots[:point_scatter] = scatter!(
         frame.axis,
         point_vectors,
         color = (:red, 1.0),
@@ -1185,18 +1208,23 @@ function create_plot!(view::View, d_system::DynamicalSystem, options::Options)
     )
 
     # Plotting orbits of critical points
+    frame.plots[:orbit_lines] = []
+    frame.plots[:orbit_scatter] = []
     for orbit in view.marks
         orbit_vectors = lift(orbit) do zs
             xs, ys = real.(zs), imag.(zs)
             return Point2f.(xs, ys)
         end
 
-        lines!(frame.axis, orbit_vectors, inspectable = false)
-        scatter!(
+        l = lines!(frame.axis, orbit_vectors, inspectable = false)
+        s = scatter!(
             frame.axis,
             orbit_vectors,
             inspector_label = (self, i, p) -> "x: $(p[1])\ny: $(p[2])",
         )
+        
+        push!(frame.plots[:orbit_lines], l)
+        push!(frame.plots[:orbit_scatter], s)
     end
 
     DataInspector(frame.axis)
@@ -1231,60 +1259,73 @@ function create_plot!(view::View, d_system::DynamicalSystem, options::Options)
 
     # Computing the initial plot
     # This is done last or else plotting the points would change the limits and trigger a redraw
-    box = get_viewbox(view)
-    colors = set_colors!(view, draw_grid(box, view.coloring_data, d_system, options))
-    img = image!(
+    xlimits, ylimits = get_limits(view)
+    updated_grid!(view, d_system, options, xlimits, ylimits)
+    frame.plots[:image] = image!(
         frame.axis,
-        view.box.xlimits,
-        view.box.ylimits,
-        colors,
+        xlimits,
+        ylimits,
+        get_colors(view),
         inspectable = false,
         interpolate = false,
     )
-    limits!(frame.axis, box.xlimits, box.ylimits)
+    limits!(frame.axis, xlimits, ylimits)
 
     # The image plot needs to be below all the other plots
-    translate!(img, 0, 0, -1)
+    translate!(frame.plots[:image], 0, 0, -1)
 
     # Notify refresh_view triggers an update of the plot
     frame.events[:force_refresh] = on(view.refresh_view) do _
-        box = get_viewbox(view)
-        colors =
-            set_colors!(view, draw_grid(box, view.coloring_data, d_system, options))
-        Makie.update!(img.attributes, arg1 = box.xlimits, arg2 = box.ylimits, arg3 = colors)
-        limits!(frame.axis, box.xlimits, box.ylimits)
+        xlimits, ylimits = get_limits(view)
+        was_image_updated = updated_grid!(view, d_system, options, xlimits, ylimits)
+
+        if was_image_updated
+            Makie.update!(
+                frame.plots[:image].attributes,
+                arg1 = xlimits,
+                arg2 = ylimits,
+                arg3 = get_colors(view),
+            )
+            limits!(frame.axis, get_limits(view)...)
+        end
     end
 
+    frame.events[:update_timer] = Timer(_ -> nothing, 0.0)
+
     # Update the plot when the view changes
-    limits_obs = async_latest(frame.axis.finallimits)
-    frame.events[:limits_refresh] = on(limits_obs) do rectangle
+    # limits_obs = async_latest()
+    frame.events[:limits_refresh] = on(frame.axis.finallimits) do rectangle
+        close(frame.events[:update_timer])
+
         xlimits = rectangle.origin[1], rectangle.origin[1] + rectangle.widths[1]
         ylimits = rectangle.origin[2], rectangle.origin[2] + rectangle.widths[2]
+        set_limits!(view, xlimits, ylimits)
 
-        box = get_viewbox(view)
-        set_viewbox!(view, Viewbox(xlimits, ylimits, box))
+        frame.events[:update_timer] = Timer(0.05) do _
+            was_image_updated = updated_grid!(view, d_system, options, xlimits, ylimits)
 
-        colors = set_colors!(
-            view,
-            draw_grid(view.box, view.coloring_data, d_system, options),
-        )
-        Makie.update!(img.attributes, arg1 = xlimits, arg2 = ylimits, arg3 = colors)
+            if was_image_updated
+                Makie.update!(
+                    frame.plots[:image].attributes,
+                    arg1 = xlimits,
+                    arg2 = ylimits,
+                    arg3 = get_colors(view),
+                )
+                limits!(frame.axis, get_limits(view)...)
+            end
+        end
     end
 
     return view
 end
 
 function save_view(filename::String, view::View)
-    pxs = view.pixels
-    fig = Figure(figure_padding = 0, size = (pxs, pxs))
-    ax = Axis(fig[1, 1], aspect = AxisAspect(1))
+    colors = get_colors(view)
+    scene = Scene(camera = campixel!, size = size(colors))
 
-    hidedecorations!(ax)
-    hidespines!(ax)
+    image!(scene, colors)
 
-    image!(ax, get_colors(view))
-
-    Makie.save(filename, fig)
+    Makie.save(filename, scene)
 end
 
 refresh!(view::View) = notify(view.refresh_view)
@@ -1310,7 +1351,7 @@ is_mouseover(view::View, ::Nothing) = is_mouseinside(view.frame.axis)
 function add_frame_events!(
     figure::Figure,
     view::View,
-    other_view::Union{Nothing, View},
+    other_view::Union{Nothing,View},
     d_system::DynamicalSystem,
     options::Options,
 )
@@ -1531,7 +1572,7 @@ function add_buttons!(figure, mandel, julia, d_system, options, show_rays)
 
             options.compact_view = !options.compact_view
             if options.compact_view
-                topframe.axis.width = nothing
+                topframe.axis.width = Relative(0.3)
                 topframe.axis.height = Relative(0.3)
                 topframe.axis.valign = 0.03
                 topframe.axis.halign = 0.03
@@ -1547,7 +1588,7 @@ function add_buttons!(figure, mandel, julia, d_system, options, show_rays)
                 topframe.axis.height = nothing
                 topframe.axis.valign = :center
                 topframe.axis.halign = :center
-                topframe.axis.aspect = AxisAspect(1)
+                topframe.axis.aspect = nothing
 
                 figure[1, 1][1, 1] = topframe.axis
                 figure[1, 1][1, 2] = bottomframe.axis
@@ -1564,7 +1605,7 @@ function add_buttons!(figure, mandel, julia, d_system, options, show_rays)
                 (julia.frame, mandel.frame)
 
             translate_axis!(topframe.axis, 15)
-            translate_axis!(bottomframe.axis, 0)
+            translate_axis!(bottomframe.axis, 10)
 
             if options.compact_view
                 topframe.axis.width = Relative(0.3)
@@ -1577,7 +1618,7 @@ function add_buttons!(figure, mandel, julia, d_system, options, show_rays)
                 bottomframe.axis.height = nothing
                 bottomframe.axis.valign = :center
                 bottomframe.axis.halign = :center
-                bottomframe.axis.aspect = AxisAspect(1)
+                bottomframe.axis.aspect = nothing
 
                 figure[1, 1][1, 1] = topframe.axis
                 figure[1, 1][1, 1] = bottomframe.axis
@@ -1589,7 +1630,7 @@ function add_buttons!(figure, mandel, julia, d_system, options, show_rays)
                     frame.axis.height = nothing
                     frame.axis.valign = :center
                     frame.axis.halign = :center
-                    frame.axis.aspect = AxisAspect(1)
+                    frame.axis.aspect = nothing
                 end
 
                 figure[1, 1][1, 1] = topframe.axis
@@ -1709,8 +1750,6 @@ Viewer(f; crit = crit, mandel_diameter = 1.0)
   - `mandel_diameter = 4.0`: Initial diameter of the Mandelbrot plot.
   - `julia_center = 0.0im`: Initial center of the Julia plot.
   - `julia_diameter = 4.0`: Initial diameter of the Julia plot.
-  - `grid_width = 800`: Width (and height) of the grid of complex numbers used to plot \
-    sets.
   - `compact_view = true`: If 'true' one of the plots is show as an inset plot, if \
     `false` they are shown side-by-side.
   - `show_rays = false`: Rays can only be computed for polynomials. Only the dynamic \
@@ -1769,7 +1808,6 @@ struct Viewer
         julia_center = 0.0im,
         julia_diameter = 4.0,
         compact_view = true,
-        grid_width = 800,
         coloring_method = :escape_time,
         projective_metric = false,
         show_rays = false,
@@ -1813,7 +1851,6 @@ struct Viewer
                 frame = mandel_frame,
                 center = mandel_center,
                 diameter = mandel_diameter,
-                pixels = grid_width,
                 coloring_data = mandel_coloring,
             )
 
@@ -1822,7 +1859,6 @@ struct Viewer
             center = julia_center,
             diameter = julia_diameter,
             parameter = c,
-            pixels = grid_width,
             coloring_data = julia_coloring,
             show_rays = show_rays,
         )
@@ -1837,12 +1873,12 @@ struct Viewer
 
         if is_family
             add_frame_events!(figure, mandel, julia, d_system, options)
-            create_plot!(mandel, d_system, options)
+            create_plots!(mandel, d_system, options)
             mandel.points[] = [get_parameter(julia)]
         end
 
         add_frame_events!(figure, julia, mandel, d_system, options)
-        create_plot!(julia, d_system, options)
+        create_plots!(julia, d_system, options)
 
         colgap!(content(figure[1, 1]), 10)
         inputs = add_buttons!(figure, mandel, julia, d_system, options, show_rays)
@@ -1905,7 +1941,7 @@ function change_color!(figure, julia, i, d_system, options)
         color = cs,
         shading = NoShading,
     )
-    ax.gridz[] = 400
+    ax.gridz[] = 1000
 
     attractors = julia.coloring_data.attractors
     colors = [attractor.color for attractor in attractors if !isa(attractor.color, Symbol)]
@@ -1955,11 +1991,11 @@ end
 
 function update_viewer!(viewer::Viewer, which::Symbol)
     if which == :both || which == :julia
-        update_view!(viewer.julia, viewer.d_system, viewer.options)
+        refresh!(julia)
     end
 
     if viewer.options.is_family && (which == :both || which == :mandel)
-        update_view!(viewer.mandel, viewer.d_system, viewer.options)
+        refresh!(mandel)
     end
 
     return nothing
