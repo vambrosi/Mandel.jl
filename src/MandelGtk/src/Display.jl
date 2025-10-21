@@ -495,13 +495,17 @@ function Viewer(
     overlay = GtkOverlay(julia_canvas)
     add_overlay(overlay, frame)
 
-    menu_button = GtkButton(; icon_name = "mail-send-receive-symbolic")
-    menu_button.margin_start = 10
-    menu_button.margin_top = 10
-    menu_button.halign = 1
-    menu_button.valign = 1
+    button_box = GtkBox(:h)
+    button_box.margin_start = 10
+    button_box.margin_top = 10
+    button_box.halign = 1
+    button_box.valign = 1
 
-    add_overlay(overlay, menu_button)
+    switch_button = GtkButton(; icon_name = "mail-send-receive-symbolic")
+    reset_button = GtkButton(; icon_name = "zoom-fit-best-symbolic")
+    push!(button_box, switch_button, reset_button)
+
+    add_overlay(overlay, button_box)
     push!(vbox, overlay)
 
     coord_label = GtkLabel(string(0.0im))
@@ -611,7 +615,7 @@ function Viewer(
     add_events(julia_canvas, julia, d_system, options, coord_label)
     add_events(mandel_canvas, julia_canvas, mandel, julia, d_system, options, coord_label)
 
-    signal_connect(menu_button, "clicked") do widget
+    @guarded signal_connect(switch_button, "clicked") do widget
         frame_child = Gtk4.child(frame)
         overlay_child = Gtk4.child(overlay)
 
@@ -632,6 +636,13 @@ function Viewer(
         frame[] = overlay_child
 
         is_mandel_small = !is_mandel_small
+    end
+
+    @guarded signal_connect(reset_button, "clicked") do widget
+        overlay_child = Gtk4.child(overlay)
+
+        view = overlay_child == julia_canvas ? julia : mandel
+        update_plot!(view, view.canvas, view.init_roi, d_system, options)
     end
 
     show(win)
