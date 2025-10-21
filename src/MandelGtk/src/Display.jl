@@ -1,4 +1,8 @@
-using Gtk4, Graphics, Cairo
+using Gtk4, Gtk4.GLib, Graphics, Cairo
+
+# --------------------------------------------------------------------------------------- #
+# Main Definitions
+# --------------------------------------------------------------------------------------- #
 
 @enum PlaneType DynamicalPlane ParameterPlane
 
@@ -8,19 +12,6 @@ mutable struct ROI
     parameter::ComplexF64
     plane_type::PlaneType
 end
-
-function canvas_to_complex(roi, height, width, x, y)
-    upp = roi.diameter / min(height, width)
-
-    a = (x - width / 2) * upp
-    b = -(y - height / 2) * upp
-
-    return roi.center + complex(a, b)
-end
-
-# --------------------------------------------------------------------------------------- #
-# Events
-# --------------------------------------------------------------------------------------- #
 
 mutable struct Events
     pressed::Bool
@@ -33,222 +24,6 @@ mutable struct Events
     zoom_timer::Timer
 end
 
-@guarded function on_press(controller, n_press, x, y, view)
-    view.events.pressed = true
-    view.events.dragstart = [x, y]
-    return
-end
-
-@guarded function on_release(controller, n_press, x, y, view, d_system, options)
-    view.events.pressed || return
-    view.events.pressed = false
-
-    abs(view.events.dragstart[1] - x) < 10 &&
-        abs(view.events.dragstart[2] - y) < 10 &&
-        return
-
-    canvas = widget(controller)
-    ctx = getgc(canvas)
-
-    h = height(canvas)
-    w = width(canvas)
-
-    z1 = canvas_to_complex(view.roi, h, w, view.events.dragstart...)
-    z2 = canvas_to_complex(view.roi, h, w, x, y)
-
-    view.roi.center += z1 - z2
-    plt = plot(view.roi, d_system, options, view.coloring_data, w, h)
-
-    surface = CairoImageSurface(plt)
-    set_source_surface(ctx, surface)
-    paint(ctx)
-    reveal(canvas)
-
-    view.plot = plt
-    return
-end
-
-@guarded function on_motion(controller, x, y, view, coord)
-    view.events.pointer = [x, y]
-
-    canvas = widget(controller)
-    ctx = getgc(canvas)
-
-    h = height(canvas)
-    w = width(canvas)
-
-    # coord.label = string(canvas_to_complex(view.roi, h, w, x, y))
-    coord.label = string(view.events.pointer)
-
-    view.events.pressed || return
-
-    set_source_rgb(ctx, 1, 1, 1)
-    rectangle(ctx, 0, 0, w, h)
-    fill(ctx)
-
-    surface = CairoImageSurface(view.plot)
-
-    Δx = x - view.events.dragstart[1]
-    Δy = y - view.events.dragstart[2]
-
-    set_source_surface(ctx, surface, Δx, Δy)
-    paint(ctx)
-
-    reveal(canvas)
-    return
-end
-
-function zoom!(view, d_system, options, canvas, ctx, h, w, pointer)
-    roi = deepcopy(view.roi)
-
-    x, y = pointer
-    inv_scale = 1 / view.events.scale
-
-    # No idea why shifting by 1 is necessary here, but not elsewhere.
-    z = canvas_to_complex(roi, h, w, x, y + 1)
-
-    roi.diameter *= inv_scale
-    roi.center = inv_scale * roi.center + (1 - inv_scale) * z
-
-    plt = plot(roi, d_system, options, view.coloring_data, w, h)
-
-    surface = CairoImageSurface(plt)
-    set_source_surface(ctx, surface, 0, 0)
-    paint(ctx)
-    reveal(canvas)
-
-    view.roi = roi
-    view.events.scale = 1.0
-    view.plot = plt
-
-    return nothing
-end
-
-@guarded function on_zoom(controller, Δx, Δy, view, d_system, options)
-    view.events.pressed && return
-    view.events.zooming = true
-
-    view.events.scale *= Δy < 0 ? 1.1 : 0.9
-    view.events.scale = min(max(0.02, view.events.scale), 50)
-
-    pointer = deepcopy(view.events.pointer)
-
-    canvas = widget(controller)
-    ctx = getgc(canvas)
-
-    h = height(canvas)
-    w = width(canvas)
-
-    set_source_rgb(ctx, 1, 1, 1)
-    rectangle(ctx, 0, 0, w, h)
-    fill(ctx)
-
-    translate(ctx, pointer[1], pointer[2])
-    scale(ctx, view.events.scale, view.events.scale)
-    translate(ctx, -pointer[1], -pointer[2])
-    surface = CairoImageSurface(view.plot)
-    set_source_surface(ctx, surface, Δx, Δy)
-    paint(ctx)
-    reset_transform(ctx)
-    reveal(canvas)
-
-    close(view.events.zoom_timer)
-    view.events.zoom_timer = Timer(0.1) do _
-        zoom!(view, d_system, options, canvas, ctx, h, w, pointer)
-    end
-
-    return
-end
-
-function add_mouse_events(canvas, view, d_system, options, coord_label)
-    mouse_left = GtkGestureClick(canvas)
-    signal_connect(mouse_left, "pressed") do args...
-        on_press(args..., view)
-    end
-
-    signal_connect(mouse_left, "released") do args...
-        on_release(args..., view, d_system, options)
-    end
-
-    mouse_motion = GtkEventControllerMotion(canvas)
-    signal_connect(mouse_motion, "motion") do args...
-        on_motion(args..., view, coord_label)
-    end
-
-    mouse_scroll =
-        GtkEventControllerScroll(Gtk4.EventControllerScrollFlags_VERTICAL, canvas)
-
-    signal_connect(mouse_scroll, "scroll") do args...
-        on_zoom(args..., view, d_system, options)
-    end
-
-    return mouse_left, mouse_motion, mouse_scroll
-end
-
-function add_mouse_events(
-    mandel_canvas,
-    julia_canvas,
-    mandel,
-    julia,
-    d_system,
-    options,
-    coord_label,
-)
-    mouse_left = add_mouse_events(mandel_canvas, mandel, d_system, options, coord_label)[1]
-
-    signal_connect(mouse_left, "released") do controller, n_press, x, y
-        abs(mandel.events.dragstart[1] - x) > 10 && return
-        abs(mandel.events.dragstart[2] - y) > 10 && return
-
-        canvas = widget(controller)
-        h = height(canvas)
-        w = width(canvas)
-
-        ctx = getgc(mandel_canvas)
-        surface = CairoImageSurface(mandel.plot)
-        set_source_surface(ctx, surface, 0, 0)
-        paint(ctx)
-        reveal(mandel_canvas)
-
-        julia.roi.parameter = canvas_to_complex(mandel.roi, h, w, x, y)
-
-        coloring_data = julia.coloring_data
-        if coloring_data.update_attractors
-            T = get_attractor_type(coloring_data)
-            attractor_list = get_attractors(
-                d_system.map,
-                julia.roi.parameter,
-                projective = (T == Point),
-                ε = options.convergence_radius / 1000,
-            )
-            julia.coloring_data = ColoringData{T}(
-                coloring_data.method,
-                attractor_list,
-                coloring_data.update_attractors,
-            )
-            sync_schemes!(options, julia.coloring_data.attractors)
-        end
-
-        h = height(julia_canvas)
-        w = width(julia_canvas)
-
-        ctx = getgc(julia_canvas)
-        plt = plot(julia.roi, d_system, options, julia.coloring_data, w, h)
-
-        surface = CairoImageSurface(plt)
-        set_source_surface(ctx, surface, 0, 0)
-        paint(ctx)
-        reveal(julia_canvas)
-
-        julia.plot = plt
-        return
-    end
-end
-
-# --------------------------------------------------------------------------------------- #
-# Options
-# --------------------------------------------------------------------------------------- #
-
 mutable struct Options
     convergence_radius::Float64
     max_iterations::Int
@@ -260,6 +35,40 @@ mutable struct Options
     coloring_methods::Tuple{Symbol,Symbol}
     coloring_schemes::Vector{ColoringScheme}
 end
+
+mutable struct View
+    roi::ROI
+    init_roi::ROI
+
+    canvas::GtkCanvas
+
+    plot::Matrix{RGB24}
+    coloring_data::ColoringData
+    events::Events
+end
+
+struct Viewer
+    window::GtkWindowLeaf
+    mandel::View
+    julia::View
+end
+
+# --------------------------------------------------------------------------------------- #
+# Coordinate Change
+# --------------------------------------------------------------------------------------- #
+
+function canvas_to_complex(roi, height, width, x, y)
+    upp = roi.diameter / min(height, width)
+
+    a = (x - width / 2) * upp
+    b = -(y - height / 2) * upp
+
+    return roi.center + complex(a, b)
+end
+
+# --------------------------------------------------------------------------------------- #
+# Options
+# --------------------------------------------------------------------------------------- #
 
 make_tuple(x) = (x, x)
 make_tuple(x::Tuple) = x
@@ -332,22 +141,19 @@ end
 # Plots
 # --------------------------------------------------------------------------------------- #
 
-mutable struct View
-    roi::ROI
-    init_roi::ROI
-
-    plot::Matrix{RGB24}
-    coloring_data::ColoringData
-    events::Events
-end
-
-function View(roi::ROI, coloring_data::ColoringData, w::Integer, h::Integer)
+function View(
+    roi::ROI,
+    canvas::GtkCanvas,
+    coloring_data::ColoringData,
+    w::Integer,
+    h::Integer,
+)
     plt = Matrix{RGB24}(undef, w, h)
 
     timer = Timer(_ -> nothing, 0.0)
     events = Events(false, false, [0.0, 0.0], [0.0, 0.0], 1.0, timer)
 
-    return View(roi, deepcopy(roi), plt, coloring_data, events)
+    return View(roi, deepcopy(roi), canvas, plt, coloring_data, events)
 end
 
 function parameter_slice!(plt, j, corner, w, upp, f, crit, coloring_data, options)
@@ -436,17 +242,222 @@ function plot(
     return plt
 end
 
+function update_plot!(view, canvas, roi, d_system, options)
+    Gtk4.GLib.g_idle_add() do
+        w = width(canvas)
+        h = height(canvas)
+        ctx = getgc(canvas)
+
+        plt = plot(roi, d_system, options, view.coloring_data, w, h)
+        surface = CairoImageSurface(plt)
+        set_source_surface(ctx, surface, 0, 0)
+        paint(ctx)
+        reveal(canvas)
+
+        view.roi = roi
+        view.events.scale = 1.0
+        view.plot = plt
+
+        false
+    end
+end
+
+update_plot!(view, canvas, d_system, options) =
+    update_plot!(view, canvas, view.roi, d_system, options)
+
+# --------------------------------------------------------------------------------------- #
+# Events
+# --------------------------------------------------------------------------------------- #
+
+@guarded function on_press(controller, n_press, x, y, view)
+    view.events.pressed = true
+    view.events.dragstart = [x, y]
+    return
+end
+
+@guarded function on_release(controller, n_press, x, y, view, d_system, options)
+    view.events.pressed || return
+    view.events.pressed = false
+
+    abs(view.events.dragstart[1] - x) < 10 &&
+        abs(view.events.dragstart[2] - y) < 10 &&
+        return
+
+    canvas = widget(controller)
+
+    h = height(canvas)
+    w = width(canvas)
+
+    z1 = canvas_to_complex(view.roi, h, w, view.events.dragstart...)
+    z2 = canvas_to_complex(view.roi, h, w, x, y)
+
+    view.roi.center += z1 - z2
+    update_plot!(view, canvas, d_system, options)
+
+    return
+end
+
+@guarded function on_motion(controller, x, y, view, coord)
+    view.events.pointer = [x, y]
+
+    canvas = widget(controller)
+    ctx = getgc(canvas)
+
+    h = height(canvas)
+    w = width(canvas)
+
+    coord.label = string(canvas_to_complex(view.roi, h, w, x, y))
+
+    view.events.pressed || return
+
+    set_source_rgb(ctx, 1, 1, 1)
+    rectangle(ctx, 0, 0, w, h)
+    fill(ctx)
+
+    surface = CairoImageSurface(view.plot)
+
+    Δx = x - view.events.dragstart[1]
+    Δy = y - view.events.dragstart[2]
+
+    set_source_surface(ctx, surface, Δx, Δy)
+    paint(ctx)
+
+    reveal(canvas)
+    return nothing
+end
+
+function zoom!(view, d_system, options, canvas, pointer)
+    roi = deepcopy(view.roi)
+
+    x, y = pointer
+    inv_scale = 1 / view.events.scale
+
+    h = height(canvas)
+    w = width(canvas)
+
+    # No idea why shifting by 1 is necessary here, but not elsewhere.
+    z = canvas_to_complex(roi, h, w, x, y + 1)
+
+    roi.diameter *= inv_scale
+    roi.center = inv_scale * roi.center + (1 - inv_scale) * z
+
+    update_plot!(view, canvas, roi, d_system, options)
+    return nothing
+end
+
+@guarded function on_zoom(controller, Δx, Δy, view, d_system, options)
+    view.events.pressed && return
+    view.events.zooming = true
+
+    view.events.scale *= Δy < 0 ? 1.1 : 0.9
+    view.events.scale = min(max(0.02, view.events.scale), 50)
+
+    pointer = deepcopy(view.events.pointer)
+
+    canvas = widget(controller)
+    ctx = getgc(canvas)
+
+    h = height(canvas)
+    w = width(canvas)
+
+    set_source_rgb(ctx, 1, 1, 1)
+    rectangle(ctx, 0, 0, w, h)
+    fill(ctx)
+
+    translate(ctx, pointer[1], pointer[2])
+    scale(ctx, view.events.scale, view.events.scale)
+    translate(ctx, -pointer[1], -pointer[2])
+    surface = CairoImageSurface(view.plot)
+    set_source_surface(ctx, surface, Δx, Δy)
+    paint(ctx)
+    reset_transform(ctx)
+    reveal(canvas)
+
+    close(view.events.zoom_timer)
+    view.events.zoom_timer = Timer(0.1) do _
+        zoom!(view, d_system, options, canvas, pointer)
+    end
+
+    return
+end
+
+function add_events(canvas, view, d_system, options, coord_label)
+    mouse_left = GtkGestureClick(canvas)
+    signal_connect(mouse_left, "pressed") do args...
+        on_press(args..., view)
+    end
+
+    signal_connect(mouse_left, "released") do args...
+        on_release(args..., view, d_system, options)
+    end
+
+    mouse_motion = GtkEventControllerMotion(canvas)
+    signal_connect(mouse_motion, "motion") do args...
+        on_motion(args..., view, coord_label)
+    end
+
+    mouse_scroll =
+        GtkEventControllerScroll(Gtk4.EventControllerScrollFlags_VERTICAL, canvas)
+
+    signal_connect(mouse_scroll, "scroll") do args...
+        on_zoom(args..., view, d_system, options)
+    end
+
+    return mouse_left, mouse_motion, mouse_scroll
+end
+
+function add_events(
+    mandel_canvas,
+    julia_canvas,
+    mandel,
+    julia,
+    d_system,
+    options,
+    coord_label,
+)
+    mouse_left = add_events(mandel_canvas, mandel, d_system, options, coord_label)[1]
+
+    signal_connect(mouse_left, "released") do controller, n_press, x, y
+        abs(mandel.events.dragstart[1] - x) > 10 && return
+        abs(mandel.events.dragstart[2] - y) > 10 && return
+
+        canvas = widget(controller)
+        h = height(canvas)
+        w = width(canvas)
+
+        ctx = getgc(mandel_canvas)
+        surface = CairoImageSurface(mandel.plot)
+        set_source_surface(ctx, surface, 0, 0)
+        paint(ctx)
+        reveal(mandel_canvas)
+
+        julia.roi.parameter = canvas_to_complex(mandel.roi, h, w, x, y)
+
+        coloring_data = julia.coloring_data
+        if coloring_data.update_attractors
+            T = get_attractor_type(coloring_data)
+            attractor_list = get_attractors(
+                d_system.map,
+                julia.roi.parameter,
+                projective = (T == ProjectivePoint),
+                ε = options.convergence_radius / 1000,
+            )
+            julia.coloring_data = ColoringData{T}(
+                coloring_data.method,
+                attractor_list,
+                coloring_data.update_attractors,
+            )
+            sync_schemes!(options, julia.coloring_data.attractors)
+        end
+
+        update_plot!(julia, julia_canvas, d_system, options)
+        return
+    end
+end
+
 # --------------------------------------------------------------------------------------- #
 # Viewer
 # --------------------------------------------------------------------------------------- #
-
-struct Viewer
-    window::GtkWindow
-    canvas::GtkCanvas
-    overlay::GtkOverlay
-    mandel::View
-    julia::View
-end
 
 function Viewer(
     f;
@@ -466,21 +477,31 @@ function Viewer(
     vbox = GtkBox(:v)
     push!(win, vbox)
 
-    canvas = GtkCanvas()
-    canvas.vexpand = canvas.hexpand = true
+    julia_canvas = GtkCanvas()
+    julia_canvas.vexpand = julia_canvas.hexpand = true
 
     overlay_size = window_width ÷ 4
-    small_canvas = GtkCanvas(overlay_size, overlay_size)
-    small_canvas.hexpand = small_canvas.vexpand = true
+    mandel_canvas = GtkCanvas(overlay_size, overlay_size)
+    mandel_canvas.hexpand = mandel_canvas.vexpand = true
 
-    frame = GtkFrame(small_canvas)
+    is_mandel_small = true
+
+    frame = GtkFrame(mandel_canvas)
     frame.halign = 1
     frame.valign = 2
     frame.margin_start = 10
     frame.margin_bottom = 10
 
-    overlay = GtkOverlay(canvas)
+    overlay = GtkOverlay(julia_canvas)
     add_overlay(overlay, frame)
+
+    menu_button = GtkButton(; icon_name = "mail-send-receive-symbolic")
+    menu_button.margin_start = 10
+    menu_button.margin_top = 10
+    menu_button.halign = 1
+    menu_button.valign = 1
+
+    add_overlay(overlay, menu_button)
     push!(vbox, overlay)
 
     coord_label = GtkLabel(string(0.0im))
@@ -512,53 +533,106 @@ function Viewer(
 
     mandel = View(
         ROI(mandel_center, mandel_diameter, 0.0im, ParameterPlane),
+        mandel_canvas,
         mandel_coloring,
         overlay_size,
         overlay_size,
     )
     julia = View(
         ROI(julia_center, julia_diameter, c, DynamicalPlane),
+        julia_canvas,
         julia_coloring,
         window_width,
         window_width,
     )
 
     # Add drawing handlers
-    @guarded draw(canvas) do widget
-        ctx = getgc(widget)
-        h = height(widget)
-        w = width(widget)
+    julia_timer = Timer(_ -> nothing, 0.0)
+    @guarded draw(julia_canvas) do canvas
+        w2 = width(canvas)
+        h2 = height(canvas)
+        ctx = getgc(canvas)
 
-        d = min(h, w) ÷ 4
-        small_canvas.content_height = d
-        small_canvas.content_width = d
+        set_source_rgb(ctx, 1, 1, 1)
+        rectangle(ctx, 0, 0, w2, h2)
+        fill(ctx)
 
-        plt = plot(julia.roi, d_system, options, julia.coloring_data, w, h)
-        surface = CairoImageSurface(plt)
-        set_source_surface(ctx, surface, 0, 0)
+        surface = CairoImageSurface(julia.plot)
+        w1, h1 = size(julia.plot)
+
+        set_source_surface(ctx, surface, (w2 - w1) ÷ 2, (h2 - h1) ÷ 2)
         paint(ctx)
-        reveal(canvas)
 
-        julia.plot = plt
+        reveal(mandel_canvas)
+
+        if is_mandel_small
+            d = min(w2, h2) ÷ 4
+            mandel_canvas.content_height = d
+            mandel_canvas.content_width = d
+        end
+
+        close(julia_timer)
+        julia_timer = Timer(0.1) do _
+            update_plot!(julia, julia_canvas, d_system, options)
+        end
     end
 
-    @guarded draw(small_canvas) do widget
-        ctx = getgc(widget)
-        h = height(widget)
-        w = width(widget)
+    mandel_timer = Timer(_ -> nothing, 0.0)
+    @guarded draw(mandel_canvas) do canvas
+        w2 = width(canvas)
+        h2 = height(canvas)
+        ctx = getgc(canvas)
 
-        plt = plot(mandel.roi, d_system, options, mandel.coloring_data, w, h)
-        surface = CairoImageSurface(plt)
-        set_source_surface(ctx, surface, 0, 0)
+        set_source_rgb(ctx, 1, 1, 1)
+        rectangle(ctx, 0, 0, w2, h2)
+        fill(ctx)
+
+        surface = CairoImageSurface(mandel.plot)
+        w1, h1 = size(mandel.plot)
+
+        set_source_surface(ctx, surface, (w2 - w1) ÷ 2, (h2 - h1) ÷ 2)
         paint(ctx)
-        reveal(canvas)
 
-        mandel.plot = plt
+        reveal(mandel_canvas)
+
+        if !is_mandel_small
+            d = min(w2, h2) ÷ 4
+            julia_canvas.content_height = d
+            julia_canvas.content_width = d
+        end
+
+        close(mandel_timer)
+        mandel_timer = Timer(0.1) do _
+            update_plot!(mandel, mandel_canvas, d_system, options)
+        end
     end
 
     # Add Events
-    add_mouse_events(canvas, julia, d_system, options, coord_label)
-    add_mouse_events(small_canvas, canvas, mandel, julia, d_system, options, coord_label)
+    add_events(julia_canvas, julia, d_system, options, coord_label)
+    add_events(mandel_canvas, julia_canvas, mandel, julia, d_system, options, coord_label)
+
+    signal_connect(menu_button, "clicked") do widget
+        frame_child = Gtk4.child(frame)
+        overlay_child = Gtk4.child(overlay)
+
+        h = height(overlay_child)
+        w = width(overlay_child)
+        d = min(h, w) ÷ 4
+
+        overlay[] = nothing
+        frame[] = nothing
+
+        frame_child.content_height = 0
+        frame_child.content_width = 0
+
+        overlay_child.content_height = d
+        overlay_child.content_width = d
+
+        overlay[] = frame_child
+        frame[] = overlay_child
+
+        is_mandel_small = !is_mandel_small
+    end
 
     show(win)
 
@@ -569,7 +643,7 @@ function Viewer(
         @async Gtk4.GLib.glib_main()
     end
 
-    return Viewer(win, canvas, overlay, mandel, julia)
+    return Viewer(win, mandel, julia)
 end
 
 Base.show(io::IO, viewer::Viewer) = print(io, "MandelGtk Viewer")

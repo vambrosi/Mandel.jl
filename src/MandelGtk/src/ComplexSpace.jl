@@ -45,7 +45,7 @@ function projective_to_complex(pt::ProjectivePoint)
 end
 
 const PointLike = Union{ComplexF64,ProjectivePoint}
-Base.convert(::Type{PointLike}, z::Number) = ComplexF64(z)
+Base.convert(::Type{T}, z::Number) where {T<:PointLike} = ComplexF64(z)
 Base.convert(::Type{ComplexF64}, z::ProjectivePoint) = projective_to_complex(z)
 
 # --------------------------------------------------------------------------------------- #
