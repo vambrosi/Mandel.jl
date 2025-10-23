@@ -51,6 +51,8 @@ struct Viewer
     window::GtkWindowLeaf
     mandel::View
     julia::View
+    d_system::DynamicalSystem
+    options::Options
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -242,17 +244,17 @@ function plot(
     return plt
 end
 
-function update_plot!(view, canvas, roi, d_system, options)
+function update_plot!(view, roi, d_system, options)
     Gtk4.GLib.g_idle_add() do
-        w = width(canvas)
-        h = height(canvas)
-        ctx = getgc(canvas)
+        w = width(view.canvas)
+        h = height(view.canvas)
+        ctx = getgc(view.canvas)
 
         plt = plot(roi, d_system, options, view.coloring_data, w, h)
         surface = CairoImageSurface(plt)
         set_source_surface(ctx, surface, 0, 0)
         paint(ctx)
-        reveal(canvas)
+        reveal(view.canvas)
 
         view.roi = roi
         view.events.scale = 1.0
@@ -262,8 +264,7 @@ function update_plot!(view, canvas, roi, d_system, options)
     end
 end
 
-update_plot!(view, canvas, d_system, options) =
-    update_plot!(view, canvas, view.roi, d_system, options)
+update_plot!(view, d_system, options) = update_plot!(view, view.roi, d_system, options)
 
 # --------------------------------------------------------------------------------------- #
 # Events
@@ -292,7 +293,7 @@ end
     z2 = canvas_to_complex(view.roi, h, w, x, y)
 
     view.roi.center += z1 - z2
-    update_plot!(view, canvas, d_system, options)
+    update_plot!(view, d_system, options)
 
     return
 end
@@ -341,7 +342,7 @@ function zoom!(view, d_system, options, canvas, pointer)
     roi.diameter *= inv_scale
     roi.center = inv_scale * roi.center + (1 - inv_scale) * z
 
-    update_plot!(view, canvas, roi, d_system, options)
+    update_plot!(view, roi, d_system, options)
     return nothing
 end
 
@@ -450,7 +451,7 @@ function add_events(
             sync_schemes!(options, julia.coloring_data.attractors)
         end
 
-        update_plot!(julia, julia_canvas, d_system, options)
+        update_plot!(julia, d_system, options)
         return
     end
 end
@@ -577,7 +578,7 @@ function Viewer(
 
         close(julia_timer)
         julia_timer = Timer(0.1) do _
-            update_plot!(julia, julia_canvas, d_system, options)
+            update_plot!(julia, d_system, options)
         end
     end
 
@@ -607,7 +608,7 @@ function Viewer(
 
         close(mandel_timer)
         mandel_timer = Timer(0.1) do _
-            update_plot!(mandel, mandel_canvas, d_system, options)
+            update_plot!(mandel, d_system, options)
         end
     end
 
@@ -642,7 +643,7 @@ function Viewer(
         overlay_child = Gtk4.child(overlay)
 
         view = overlay_child == julia_canvas ? julia : mandel
-        update_plot!(view, view.canvas, view.init_roi, d_system, options)
+        update_plot!(view, view.init_roi, d_system, options)
     end
 
     show(win)
@@ -654,7 +655,7 @@ function Viewer(
         @async Gtk4.GLib.glib_main()
     end
 
-    return Viewer(win, mandel, julia)
+    return Viewer(win, mandel, julia, d_system, options)
 end
 
 Base.show(io::IO, viewer::Viewer) = print(io, "MandelGtk Viewer")
