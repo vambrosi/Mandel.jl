@@ -14,7 +14,7 @@ struct DynamicalSystem
             )
         end
 
-        if hasmethod(f, ComplexF64) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
+        if hasmethod(f, Tuple{ComplexF64}) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
             h = (z, c) -> f(z)
         else
             h = (z, c) -> f(z, c)
@@ -432,7 +432,7 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
 end
 
 function get_attractor(f::Function, z::Number; projective::Bool = false, ε::Real = 1e-4)
-    hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
+    hasmethod(f, Tuple{ComplexF64}) || throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
@@ -486,7 +486,7 @@ Find the attracting cycles of a complex map or family. If the input is a `Viewer
 use the map/family and parameter currently shown in the `viewer`.
 """
 function get_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
-    hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
+    hasmethod(f, Tuple{ComplexF64}) || throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
