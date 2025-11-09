@@ -153,7 +153,7 @@ struct DynamicalSystem
 
     function DynamicalSystem(f::Function, critical_point::Function)
 
-        if hasmethod(f, ComplexF64) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
+        if hasmethod(f, Tuple{ComplexF64}) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
             h = (z, c) -> f(z)
         else
             h = (z, c) -> f(z, c)
@@ -570,7 +570,7 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
 end
 
 function get_attractor(f::Function, z::Number; projective::Bool = false, ε::Real = 1e-4)
-    hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
+    hasmethod(f, Tuple{ComplexF64}) || throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
@@ -624,7 +624,7 @@ Find the attracting cycles of a complex map or family. If the input is a `Viewer
 use the map/family and parameter currently shown in the `viewer`.
 """
 function get_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
-    hasmethod(f, ComplexF64) || throw("If it is a family of functions, input a parameter.")
+    hasmethod(f, Tuple{ComplexF64}) || throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
@@ -1226,7 +1226,7 @@ function delete_plots!(frame::Frame)
     for marks in view.marks
         empty!(marks.listeners)
     end
-    
+
     # TODO: rays
 end
 
@@ -1680,6 +1680,8 @@ function add_buttons!(
         end
     end
 
+    rowgap!(layout, 5)
+
     return inputs
 end
 
@@ -1882,7 +1884,8 @@ struct Viewer
             1,
             left_click_drag,
         )
-        figure = Figure(size = (800, 850))
+        size = show_rays == false ? (800, 835) : (1030, 835)
+        figure = Figure(size = size, fontsize = 12, figure_padding = 5)
 
         mandel_coloring =
             get_coloring_data(d_system.map, c, coloring_methods[1], projective_metrics[1])
@@ -1942,6 +1945,7 @@ struct Viewer
             options,
             show_rays,
         )
+        rowgap!(figure.layout, 5)
 
         return new(
             d_system,
