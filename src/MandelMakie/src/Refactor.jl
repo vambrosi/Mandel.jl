@@ -57,10 +57,22 @@ end
 
 function extend_function(f::Function)
     # Makes sure function returns a vector
-    if f(0.0im) isa Vector
-        f_vector = z -> f(z)
-    else
+    result = f(0.0im)
+    if result isa ComplexF64
         f_vector = z -> [f(z)]
+    elseif result isa Vector{ComplexF64}
+        f_vector = z -> f(z)
+    elseif result isa Tuple{Vararg{ComplexF64}}
+        f_vector = z -> [f(z)...]
+    elseif try; ComplexF64(result); true; catch; false; end 
+        f_vector = z -> [ComplexF64(f(z))]
+    elseif all(x -> try; ComplexF64(x); true; catch; false; end, result)
+        f_vector = z -> ComplexF64.(f(z))
+    else
+        throw(
+            "The critical point functions should return a ComplexF64 or a Vector{ComplexF64}.\n" *
+            "Got result of type $(typeof(result))",
+        )
     end
 
     @variables u, v
@@ -140,15 +152,13 @@ end
 struct DynamicalSystem
     map::Function
     critical_point::Function
+    par_critical_point::Function
 
-    function DynamicalSystem(f::Function, critical_point::Function)
-        result = critical_point(0.0im)
-        if !(result isa ComplexF64 || result isa Vector{ComplexF64})
-            throw(
-                "The critical point function must return a ComplexF64 or a Vector{ComplexF64}.\n" *
-                "Got result of type $(typeof(result))",
-            )
-        end
+    function DynamicalSystem(         
+        f::Function,                  
+        critical_point::Function,     
+        par_critical_point::Function, 
+    )                                 
 
         if hasmethod(f, Tuple{ComplexF64}) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
             h = (z, c) -> f(z)
@@ -156,7 +166,7 @@ struct DynamicalSystem
             h = (z, c) -> f(z, c)
         end
 
-        return new(extend_family(h), extend_function(critical_point))
+        return new(extend_family(h), extend_function(critical_point), extend_function(par_critical_point))
     end
 end
 
@@ -1026,7 +1036,7 @@ function update_grid!(
             view.colors[],
             j,
             d_system.map,
-            d_system.critical_point,
+            d_system.par_critical_point,
             corner,
             step,
             view.pixels,
@@ -1846,6 +1856,7 @@ struct Viewer
     function Viewer(
         f;
         crit = 0.0im,
+        par_crit = :same,
         c = 0.0im,
         mandel_center = 0.0im,
         mandel_diameter = 4.0,
@@ -1871,7 +1882,11 @@ struct Viewer
         is_family = hasmethod(f, Tuple{ComplexF64,ComplexF64})
 
         # Create Viewer Data
-        d_system = DynamicalSystem(f, crit)
+        if par_crit == :same
+            d_system = DynamicalSystem(f, crit, crit)
+        else
+            d_system = DynamicalSystem(f, crit, par_crit)
+        end
         options = Options(
             1e-3,
             200,
