@@ -1869,6 +1869,11 @@ struct Viewer
         show_rays = false,
         left_click_drag = :dynamic_only,
     )
+        # Force c to be ComplexF64 because functions like
+        # devaney21crit(λ) = (λ/2)^(1/3)
+        # need a complex input to be able to output a complex number.
+        c = ComplexF64(c)
+
         # Put options in standard form
         projective_metrics = make_tuple(projective_metric)
         coloring_methods = fix_criteria(make_tuple(coloring_method))
