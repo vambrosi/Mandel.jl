@@ -1,6 +1,17 @@
 using Polynomials, HypertextLiteral, Crayons, Colors
 import Nemo
 
+function get_orbit(f::Function, z::Number, c::Number, iterates::Integer)
+    zs = Vector{ComplexF64}(undef, iterates + 1)
+    zs[1] = z
+
+    for i in 2:(iterates+1)
+        zs[i] = f(zs[i-1], c)
+    end
+
+    return zs
+end
+
 struct DynamicalSystem
     map::Function
     critical_point::Function

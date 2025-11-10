@@ -11,6 +11,7 @@ mutable struct ROI
     diameter::Float64
     parameter::ComplexF64
     plane_type::PlaneType
+    orbit_start::ComplexF64
 end
 
 mutable struct Events
@@ -48,12 +49,14 @@ mutable struct View
 end
 
 struct Viewer
-    window::GtkWindowLeaf
+    windows::Dict{Symbol,GtkWindowLeaf}
     mandel::View
     julia::View
     d_system::DynamicalSystem
     options::Options
 end
+
+const CLICK_DRIFT_TOLERANCE = 5
 
 # --------------------------------------------------------------------------------------- #
 # Coordinate Change
@@ -66,6 +69,28 @@ function canvas_to_complex(roi, height, width, x, y)
     b = -(y - height / 2) * upp
 
     return roi.center + complex(a, b)
+end
+
+function complex_to_canvas(roi, height, width, z::ComplexF64)
+    ppu = min(height, width) / roi.diameter
+
+    z -= roi.center
+
+    x = width / 2 + ppu * real(z)
+    y = height / 2 - ppu * imag(z)
+
+    return x, y
+end
+
+function complex_to_canvas(roi, height, width, zs::Vector{ComplexF64})
+    ppu = min(height, width) / roi.diameter
+
+    zs .-= roi.center
+
+    xs = real(zs) .* ppu .+ width / 2
+    ys = imag(zs) .* (-ppu) .+ height / 2
+
+    return collect(zip(xs, ys))
 end
 
 # --------------------------------------------------------------------------------------- #
@@ -244,8 +269,72 @@ function plot(
     return plt
 end
 
+function redraw_orbit(ctx, roi, height, width, f, start, orbit_length, rgb)
+    orbit = get_orbit(f, start, roi.parameter, orbit_length - 1)
+
+    orbit_pxs = complex_to_canvas(roi, height, width, orbit)
+    xy = orbit_pxs[1]
+
+    set_source_rgb(ctx, rgb...)
+    arc(ctx, xy..., 3, 0, 2pi)
+    fill(ctx)
+
+    set_line_width(ctx, 2)
+
+    for iteration in 2:length(orbit_pxs)
+        move_to(ctx, xy...)
+
+        xy = orbit_pxs[iteration]
+        line_to(ctx, xy...)
+        stroke(ctx)
+
+        arc(ctx, xy..., 3, 0, 2pi)
+        fill(ctx)
+    end
+
+    return
+end
+
+function redraw_orbits(canvas, roi, d_system, options)
+    w = width(canvas)
+    h = height(canvas)
+    ctx = getgc(canvas)
+
+    if roi.plane_type == ParameterPlane
+        set_source_rgb(ctx, 1, 0, 0)
+        xy = complex_to_canvas(roi, h, w, roi.orbit_start)
+        arc(ctx, xy..., 3, 0, 2pi)
+        fill(ctx)
+    else
+        redraw_orbit(
+            ctx,
+            roi,
+            h,
+            w,
+            d_system.map,
+            roi.orbit_start,
+            options.orbit_length,
+            (1, 0, 0),
+        )
+
+        for c in d_system.critical_point(roi.parameter)
+            redraw_orbit(
+                ctx,
+                roi,
+                h,
+                w,
+                d_system.map,
+                c,
+                options.critical_length,
+                (0, 0, 1),
+            )
+        end
+    end
+    return
+end
+
 function update_plot!(view, roi, d_system, options)
-    Gtk4.GLib.g_idle_add() do
+    @guarded Gtk4.GLib.g_idle_add() do
         w = width(view.canvas)
         h = height(view.canvas)
         ctx = getgc(view.canvas)
@@ -254,6 +343,9 @@ function update_plot!(view, roi, d_system, options)
         surface = CairoImageSurface(plt)
         set_source_surface(ctx, surface, 0, 0)
         paint(ctx)
+
+        redraw_orbits(view.canvas, roi, d_system, options)
+
         reveal(view.canvas)
 
         view.roi = roi
@@ -262,6 +354,8 @@ function update_plot!(view, roi, d_system, options)
 
         false
     end
+
+    return
 end
 
 update_plot!(view, d_system, options) = update_plot!(view, view.roi, d_system, options)
@@ -276,18 +370,51 @@ update_plot!(view, d_system, options) = update_plot!(view, view.roi, d_system, o
     return
 end
 
-@guarded function on_release(controller, n_press, x, y, view, d_system, options)
+@guarded function on_release(controller, _, x, y, view, julia, d_system, options)
     view.events.pressed || return
     view.events.pressed = false
-
-    abs(view.events.dragstart[1] - x) < 10 &&
-        abs(view.events.dragstart[2] - y) < 10 &&
-        return
 
     canvas = widget(controller)
 
     h = height(canvas)
     w = width(canvas)
+
+    if abs(view.events.dragstart[1] - x) < CLICK_DRIFT_TOLERANCE &&
+       abs(view.events.dragstart[2] - y) < CLICK_DRIFT_TOLERANCE
+        ctx = getgc(canvas)
+
+        surface = CairoImageSurface(view.plot)
+        set_source_surface(ctx, surface, 0, 0)
+        paint(ctx)
+
+        view.roi.orbit_start = canvas_to_complex(view.roi, h, w, x, y)
+        redraw_orbits(canvas, view.roi, d_system, options)
+        reveal(canvas)
+
+        if view.roi.plane_type == ParameterPlane
+            julia.roi.parameter = canvas_to_complex(view.roi, h, w, x, y)
+
+            coloring_data = julia.coloring_data
+            if coloring_data.update_attractors
+                T = get_attractor_type(coloring_data)
+                attractor_list = get_attractors(
+                    d_system.map,
+                    julia.roi.parameter,
+                    projective = (T == ProjectivePoint),
+                    ε = options.convergence_radius / 1000,
+                )
+                julia.coloring_data = ColoringData{T}(
+                    coloring_data.method,
+                    attractor_list,
+                    coloring_data.update_attractors,
+                )
+                sync_schemes!(options, julia.coloring_data.attractors)
+            end
+
+            update_plot!(julia, d_system, options)
+        end
+        return
+    end
 
     z1 = canvas_to_complex(view.roi, h, w, view.events.dragstart...)
     z2 = canvas_to_complex(view.roi, h, w, x, y)
@@ -298,7 +425,7 @@ end
     return
 end
 
-@guarded function on_motion(controller, x, y, view, coord)
+@guarded function on_motion(controller, x, y, view, d_system, options, coord)
     view.events.pointer = [x, y]
 
     canvas = widget(controller)
@@ -323,8 +450,12 @@ end
     set_source_surface(ctx, surface, Δx, Δy)
     paint(ctx)
 
+    translate(ctx, Δx, Δy)
+    redraw_orbits(canvas, view.roi, d_system, options)
+    translate(ctx, -Δx, -Δy)
+
     reveal(canvas)
-    return nothing
+    return
 end
 
 function zoom!(view, d_system, options, canvas, pointer)
@@ -336,14 +467,13 @@ function zoom!(view, d_system, options, canvas, pointer)
     h = height(canvas)
     w = width(canvas)
 
-    # No idea why shifting by 1 is necessary here, but not elsewhere.
-    z = canvas_to_complex(roi, h, w, x, y + 1)
+    z = canvas_to_complex(roi, h, w, x, y)
 
     roi.diameter *= inv_scale
     roi.center = inv_scale * roi.center + (1 - inv_scale) * z
 
     update_plot!(view, roi, d_system, options)
-    return nothing
+    return
 end
 
 @guarded function on_zoom(controller, Δx, Δy, view, d_system, options)
@@ -369,8 +499,10 @@ end
     scale(ctx, view.events.scale, view.events.scale)
     translate(ctx, -pointer[1], -pointer[2])
     surface = CairoImageSurface(view.plot)
-    set_source_surface(ctx, surface, Δx, Δy)
+    set_source_surface(ctx, surface, 0, 0)
     paint(ctx)
+
+    redraw_orbits(canvas, view.roi, d_system, options)
     reset_transform(ctx)
     reveal(canvas)
 
@@ -382,77 +514,30 @@ end
     return
 end
 
-function add_events(canvas, view, d_system, options, coord_label)
-    mouse_left = GtkGestureClick(canvas)
-    signal_connect(mouse_left, "pressed") do args...
-        on_press(args..., view)
-    end
+function add_events(canvases, views, d_system, options, coord_label)
+    julia = views[2].roi.plane_type == DynamicalPlane ? views[2] : views[1]
 
-    signal_connect(mouse_left, "released") do args...
-        on_release(args..., view, d_system, options)
-    end
-
-    mouse_motion = GtkEventControllerMotion(canvas)
-    signal_connect(mouse_motion, "motion") do args...
-        on_motion(args..., view, coord_label)
-    end
-
-    mouse_scroll =
-        GtkEventControllerScroll(Gtk4.EventControllerScrollFlags_VERTICAL, canvas)
-
-    signal_connect(mouse_scroll, "scroll") do args...
-        on_zoom(args..., view, d_system, options)
-    end
-
-    return mouse_left, mouse_motion, mouse_scroll
-end
-
-function add_events(
-    mandel_canvas,
-    julia_canvas,
-    mandel,
-    julia,
-    d_system,
-    options,
-    coord_label,
-)
-    mouse_left = add_events(mandel_canvas, mandel, d_system, options, coord_label)[1]
-
-    signal_connect(mouse_left, "released") do controller, n_press, x, y
-        abs(mandel.events.dragstart[1] - x) > 10 && return
-        abs(mandel.events.dragstart[2] - y) > 10 && return
-
-        canvas = widget(controller)
-        h = height(canvas)
-        w = width(canvas)
-
-        ctx = getgc(mandel_canvas)
-        surface = CairoImageSurface(mandel.plot)
-        set_source_surface(ctx, surface, 0, 0)
-        paint(ctx)
-        reveal(mandel_canvas)
-
-        julia.roi.parameter = canvas_to_complex(mandel.roi, h, w, x, y)
-
-        coloring_data = julia.coloring_data
-        if coloring_data.update_attractors
-            T = get_attractor_type(coloring_data)
-            attractor_list = get_attractors(
-                d_system.map,
-                julia.roi.parameter,
-                projective = (T == ProjectivePoint),
-                ε = options.convergence_radius / 1000,
-            )
-            julia.coloring_data = ColoringData{T}(
-                coloring_data.method,
-                attractor_list,
-                coloring_data.update_attractors,
-            )
-            sync_schemes!(options, julia.coloring_data.attractors)
+    for (canvas, view) in zip(canvases, views)
+        mouse_left = GtkGestureClick(canvas)
+        signal_connect(mouse_left, "pressed") do args...
+            on_press(args..., view)
         end
 
-        update_plot!(julia, d_system, options)
-        return
+        signal_connect(mouse_left, "released") do args...
+            on_release(args..., view, julia, d_system, options)
+        end
+
+        mouse_motion = GtkEventControllerMotion(canvas)
+        signal_connect(mouse_motion, "motion") do args...
+            on_motion(args..., view, d_system, options, coord_label)
+        end
+
+        mouse_scroll =
+            GtkEventControllerScroll(Gtk4.EventControllerScrollFlags_VERTICAL, canvas)
+
+        signal_connect(mouse_scroll, "scroll") do args...
+            on_zoom(args..., view, d_system, options)
+        end
     end
 end
 
@@ -473,6 +558,8 @@ function Viewer(
     projective_metric = false,
     window_width = 800,
 )
+    c = ComplexF64(c)
+
     # Create Main Window
     win = GtkWindow("Mandel.jl", window_width, window_width + 15, true, false)
     vbox = GtkBox(:v)
@@ -502,9 +589,24 @@ function Viewer(
     button_box.halign = 1
     button_box.valign = 1
 
+    menu = GMenu()
+    item2 = GMenuItem("Options...", "win.options")
+    push!(menu, item2)
+    item3 = GMenuItem("Quit", "win.close")
+    push!(menu, item3)
+
+    menu_button = GtkMenuButton(; icon_name = "open-menu-symbolic")
+    Gtk4.menu_model(menu_button, menu)
+    menu_button.tooltip_text = "Menu"
+    menu_button.halign = 0
+    menu_button.valign = 1
+
     switch_button = GtkButton(; icon_name = "mail-send-receive-symbolic")
+    switch_button.tooltip_text = "Switch Views"
+
     reset_button = GtkButton(; icon_name = "zoom-fit-best-symbolic")
-    push!(button_box, switch_button, reset_button)
+    reset_button.tooltip_text = "Reset View"
+    push!(button_box, menu_button, switch_button, reset_button)
 
     add_overlay(overlay, button_box)
     push!(vbox, overlay)
@@ -537,14 +639,15 @@ function Viewer(
         get_coloring_data(d_system.map, c, coloring_methods[2], projective_metrics[2])
 
     mandel = View(
-        ROI(mandel_center, mandel_diameter, 0.0im, ParameterPlane),
+        ROI(mandel_center, mandel_diameter, 0.0im, ParameterPlane, c),
         mandel_canvas,
         mandel_coloring,
         overlay_size,
         overlay_size,
     )
+
     julia = View(
-        ROI(julia_center, julia_diameter, c, DynamicalPlane),
+        ROI(julia_center, julia_diameter, c, DynamicalPlane, julia_center),
         julia_canvas,
         julia_coloring,
         window_width,
@@ -613,8 +716,13 @@ function Viewer(
     end
 
     # Add Events
-    add_events(julia_canvas, julia, d_system, options, coord_label)
-    add_events(mandel_canvas, julia_canvas, mandel, julia, d_system, options, coord_label)
+    add_events(
+        [mandel_canvas, julia_canvas],
+        [mandel, julia],
+        d_system,
+        options,
+        coord_label,
+    )
 
     @guarded signal_connect(switch_button, "clicked") do widget
         frame_child = Gtk4.child(frame)
@@ -637,25 +745,109 @@ function Viewer(
         frame[] = overlay_child
 
         is_mandel_small = !is_mandel_small
+        return
     end
 
-    @guarded signal_connect(reset_button, "clicked") do widget
+    signal_connect(reset_button, "clicked") do widget
         overlay_child = Gtk4.child(overlay)
 
         view = overlay_child == julia_canvas ? julia : mandel
         update_plot!(view, view.init_roi, d_system, options)
+        return
+    end
+
+    windows = Dict(:main => win)
+
+    # Menu actions
+    function options_action(a, par)::Nothing
+        if haskey(windows, :options)
+            present(windows[:options])
+            return
+        end
+
+        dialog = GtkWindow("Options", 200, 100, true, false)
+        windows[:options] = dialog
+
+        content = GtkBox(:v)
+        content.margin_start = 10
+        content.margin_end = 10
+        content.margin_top = 10
+        content.margin_bottom = 10
+        content.spacing = 10
+
+        max_label = GtkLabel("Max Iterations:")
+        max_spin = GtkSpinButton(1, 10000, 1)
+        max_spin.value = options.max_iterations
+
+        point_label = GtkLabel("Point Orbit Length:")
+        point_spin = GtkSpinButton(1, 10000, 1)
+        point_spin.value = options.orbit_length
+
+        critical_label = GtkLabel("Critical Orbit Length:")
+        critical_spin = GtkSpinButton(1, 10000, 1)
+        critical_spin.value = options.critical_length
+
+        convergence_label = GtkLabel("Convergence Radius:")
+        convergence_spin = GtkEntry()
+        convergence_spin.text = string(options.convergence_radius)
+
+        button = GtkButton(; label = "Update Values")
+
+        push!(content, max_label)
+        push!(content, max_spin)
+        push!(content, point_label)
+        push!(content, point_spin)
+        push!(content, critical_label)
+        push!(content, critical_spin)
+        push!(content, convergence_label)
+        push!(content, convergence_spin)
+        push!(content, button)
+        push!(dialog, content)
+
+        show(dialog)
+
+        signal_connect(button, "clicked") do widget
+            options.max_iterations = Int(max_spin.value)
+            options.orbit_length = Int(point_spin.value)
+            options.critical_length = Int(critical_spin.value)
+            options.convergence_radius = parse(Float64, convergence_spin.text)
+
+            update_plot!(mandel, d_system, options)
+            update_plot!(julia, d_system, options)
+        end
+
+        signal_connect(dialog, :close_request) do widget
+            delete!(windows, :options)
+            return
+        end
+
+        return
+    end
+
+    function close_action(a, par)::Nothing
+        haskey(windows, :options) && destroy(windows[:options])
+        destroy(windows[:main])
+        return
+    end
+
+    action_group = GSimpleActionGroup()
+    add_action(GActionMap(action_group), "close", close_action)
+    add_action(GActionMap(action_group), "options", options_action)
+    push!(win, Gtk4.GLib.GActionGroup(action_group), "win")
+
+    signal_connect(win, :close_request) do widget
+        haskey(windows, :options) && destroy(windows[:options])
+        return
     end
 
     show(win)
 
     if !isinteractive()
-        signal_connect(win, :close_request) do widget
-            GC.gc()
-        end
         @async Gtk4.GLib.glib_main()
+        Gtk4.GLib.waitforsignal(win, :close_request)
     end
 
-    return Viewer(win, mandel, julia, d_system, options)
+    return Viewer(windows, mandel, julia, d_system, options)
 end
 
 Base.show(io::IO, viewer::Viewer) = print(io, "MandelGtk Viewer")
