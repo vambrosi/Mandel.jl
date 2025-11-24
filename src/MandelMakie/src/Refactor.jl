@@ -64,9 +64,19 @@ function extend_function(f::Function)
         f_vector = z -> f(z)
     elseif result isa Tuple{Vararg{ComplexF64}}
         f_vector = z -> [f(z)...]
-    elseif try; ComplexF64(result); true; catch; false; end 
+    elseif try
+        ComplexF64(result)
+        true
+    catch
+        false
+    end
         f_vector = z -> [ComplexF64(f(z))]
-    elseif all(x -> try; ComplexF64(x); true; catch; false; end, result)
+    elseif all(x -> try
+        ComplexF64(x)
+        true
+    catch
+        false
+    end, result)
         f_vector = z -> ComplexF64.(f(z))
     else
         throw(
@@ -154,29 +164,37 @@ struct DynamicalSystem
     critical_point::Function
     par_critical_point::Function
 
-    function DynamicalSystem(         
-        f::Function,                  
-        critical_point::Function,     
-        par_critical_point::Function, 
-    )                                 
-
+    function DynamicalSystem(
+        f::Function,
+        critical_point::Function,
+        par_critical_point::Function,
+    )
         if hasmethod(f, Tuple{ComplexF64}) && !hasmethod(f, Tuple{ComplexF64,ComplexF64})
             h = (z, c) -> f(z)
         else
             h = (z, c) -> f(z, c)
         end
 
-        return new(extend_family(h), extend_function(critical_point), extend_function(par_critical_point))
+        return new(
+            extend_family(h),
+            extend_function(critical_point),
+            extend_function(par_critical_point),
+        )
     end
 end
 
-function DynamicalSystem(f::Function, c::Number)
+function DynamicalSystem(f::Function, c::Number, c_par::Number)
     c = convert(ComplexF64, c)
     g = let c = c
         _ -> [c]
     end
 
-    return DynamicalSystem(f, g)
+    c_par = convert(ComplexF64, c_par)
+    g_par = let c_par = c_par
+        _ -> [c_par]
+    end
+
+    return DynamicalSystem(f, g, g_par)
 end
 
 const PointLike = Union{ComplexF64,Point}
@@ -577,7 +595,8 @@ function attracting_cycle(f, z::T, c, ε, max_iterations) where {T<:PointLike}
 end
 
 function get_attractor(f::Function, z::Number; projective::Bool = false, ε::Real = 1e-4)
-    hasmethod(f, Tuple{ComplexF64}) || throw("If it is a family of functions, input a parameter.")
+    hasmethod(f, Tuple{ComplexF64}) ||
+        throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
@@ -631,7 +650,8 @@ Find the attracting cycles of a complex map or family. If the input is a `Viewer
 use the map/family and parameter currently shown in the `viewer`.
 """
 function get_attractors(f::Function; projective::Bool = false, ε::Real = 1e-4)
-    hasmethod(f, Tuple{ComplexF64}) || throw("If it is a family of functions, input a parameter.")
+    hasmethod(f, Tuple{ComplexF64}) ||
+        throw("If it is a family of functions, input a parameter.")
 
     h = extend_family((z, c) -> f(z))
 
