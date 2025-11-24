@@ -125,7 +125,7 @@ function View3D(figure, f_proj, c, state; is_mandel, mark)
         color = vertex_colors,
         colormap = :twilight,
         colorrange = (0.0, 1.0),
-        shading = FastShading,
+        shading = true,
         inspectable = false,
     )
 
