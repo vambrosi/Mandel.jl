@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.46
+# v0.20.20
 
 using Markdown
 using InteractiveUtils
@@ -12,18 +12,8 @@ begin
     Pkg.activate(Base.current_project())
     Pkg.instantiate()
 
-    # Includes the file with definitions and imports the relevant modules
-    include("./src/MandelMakie.jl")
-    using .MandelMakie
-
-    # The next lines are necessary because Pluto does not expose the exported variables of a local package. You can skip those lines if you are loading this package into the REPL or Jupyter notebook.
-    Viewer = MandelMakie.Viewer
-    Viewer3D = MandelMakie.Viewer3D
-    Julia3D = MandelMakie.Julia3D
-    Fatou3D = MandelMakie.Fatou3D
-    set_parameter! = MandelMakie.set_parameter!
-    get_parameter = MandelMakie.get_parameter
-    get_attractors = MandelMakie.get_attractors
+    # Imports the relevant module
+    using MandelMakie
 end
 
 # ╔═╡ 1ba72fef-d5c4-4da4-9c17-4ba0096bf968
@@ -50,7 +40,7 @@ Then, call `Viewer` or `Viewer3D` to open a window where you see the Mandelbrot 
 """
 
 # ╔═╡ 70f82c8f-5b1b-46c7-87b3-5fad91ba1094
-Viewer(f; crit = crit, mandel_diameter = 1.0)
+Viewer(f; crit = crit, mandel_center = -0.5)
 
 # ╔═╡ 048320b4-12f2-4e7f-b267-8b15ad2485e0
 # ╠═╡ disabled = true
@@ -104,13 +94,11 @@ The cells below need to be manually updated to reflect the last changes in the v
 """
 
 # ╔═╡ b42b3753-33ba-4e25-a01b-b316dbd86787
-# ╠═╡ disabled = true
 #=╠═╡
 get_parameter(viewer)
   ╠═╡ =#
 
 # ╔═╡ f1a18d08-d81f-4667-b87a-8d19989b201b
-# ╠═╡ disabled = true
 #=╠═╡
 get_attractors(viewer)
   ╠═╡ =#
@@ -220,7 +208,7 @@ julia = Julia3D(g, im)
 # ╠═ebbe4d7f-9ab0-47f2-85e4-c0de7cb141c0
 # ╠═9e104891-fcb5-48fd-93a7-b2889381d2a6
 # ╟─dc85ce65-38a8-4990-86f5-ed6894b96695
-# ╠═4a085b76-da75-11ee-2b50-07309082fb46
+# ╟─4a085b76-da75-11ee-2b50-07309082fb46
 # ╟─0bbfff4b-7ee9-47f5-b19d-c97494438d4d
 # ╠═6e3d25a8-08a5-4e4d-a26c-6fce6623cef9
 # ╠═cab73282-0e64-45eb-958b-92f03fb4c8ca
