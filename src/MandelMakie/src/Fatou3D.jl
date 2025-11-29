@@ -124,7 +124,7 @@ function Fatou3D(f::Function, c::Number = 0.0im; show_critical_points = false)
         scene,
         fatou_mesh,
         color = fatou_vertex_colors,
-        shading = FastShading,
+        shading = true,
         inspectable = false,
     )
 

@@ -9,6 +9,7 @@ module MandelMakie
 export Viewer,
     Viewer3D,
     Fatou3D,
+    Julia3D,
     Attractor,
     set_parameter!,
     critical_points,
